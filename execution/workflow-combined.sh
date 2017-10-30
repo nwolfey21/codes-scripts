@@ -359,12 +359,13 @@ exec_loop() {
                                 --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                 --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
                                 --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} \
-                                -- ${NETWORK_CONF}
+                                -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
                             echo mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
                                 --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
                                 --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                 --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                 --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} \
                                 -- ${NETWORK_CONF}
                         fi
                     else
@@ -386,6 +387,7 @@ exec_loop() {
                         mv ${ALLOC_CONFIG_PATH} ${LP_IO_DIR}
                         mv ${WRKLD_CONF_FILE} ${LP_IO_DIR}
                     fi
+                    mv ${TEMP_LP_IO_DIR}/stdout-output ${LP_IO_DIR}
                     if [ "$NET_MODEL" == "dfly" ]
                     then
                         mv dragonfly* ${LP_IO_DIR}
