@@ -1,5 +1,5 @@
 # codes-scripts
-Scripts for automating the building and executing processes for CODES as well as visualizing model graphs and parsing/visualizing generated statistics.
+Scripts for automating the building/executing processes for CODES, visualizing model graphs, and parsing/visualizing generated statistics.
 
 ## Script Files
 ### build/build-script.sh
