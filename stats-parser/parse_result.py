@@ -99,6 +99,10 @@ def getMin(metricData, met):
     return metricData[met].min()
 
 
+def getSum(metricData, met):
+    return metricData[met].sum()
+
+
 def getMetric(dd, metric, name, traceType=0):
     metricData = dd
     if traceType != 0:
@@ -109,7 +113,9 @@ def getMetric(dd, metric, name, traceType=0):
         return getMean(metricData, name)
     if metric == "max":
         return getMax(metricData, name)
-    return getMin(metricData, name)
+    if metric == "min":
+        return getMin(metricData, name)
+    return getSum(metricData, name)
 
 
 def getMetricNemo(dat, metric, name):
@@ -137,7 +143,7 @@ def setNeMoLabel(df):
 
 
 def parseData(df):
-    trans = ["mean", "max", "min"]
+    trans = ["mean", "max", "min", "sum"]
     types = ["N"]
     results = {}
     results_length = {}
@@ -152,9 +158,9 @@ def parseData(df):
 
 
 def parseDataColumnar(df, dirname):
-    trans = ["mean", "max", "min"]
+    trans = ["mean", "max", "min", "sum"]
 
-    ncs = ["Metric", "Mean", "Max", "Min", "Rank Type", "Run Name"]
+    ncs = ["Metric", "Mean", "Max", "Min", "Sum", "Rank Type", "Run Name"]
     data = []
     dt1 = []
     for m in mets:
@@ -168,7 +174,7 @@ def parseDataColumnar(df, dirname):
             dt1 = []
             for t in trans:
                 dt1.append(getMetric(df, t, m, l))
-            data.append([m, dt1[0], dt1[1], dt1[2], l, dirname])
+            data.append([m, dt1[0], dt1[1], dt1[2], dt1[3], l, dirname])
     return pd.DataFrame(data=data, columns=ncs)
 
 
