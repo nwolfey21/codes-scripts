@@ -73,10 +73,11 @@ JOBS=("amg1k")      # See below for list of available jobs
 DISABLE_COMPUTE=1   # Whether or not to incorporate DUMPI trace compute times
 
 # Neuromorphic Background Traffic Params
+BACKGROUND_JOB="hf"     # See below for list of available background jobs
 MEAN_INTERVAL=10        # Nanosecond delay between spike message injections
-MSGS_PER_TICK=10000     # Number of spike messages to inject per chip per tick
 TICK_INTERVAL=1000000   # Nanosecond length of a tick
 MSG_SIZE=8              # Size in Bytes of spike messages
+MSGS_PER_TICK=10000     # Number of spike messages to inject per chip per tick. Overwritten in "get_background_wrkld_params()"
 BACKGROUND_RANKS=3456   # Number of neuromorphic chips. Currently overwritten for each net model in "Network Model Params" section below
 
 # Allocation Protocol (Trace workload only)
@@ -489,6 +490,16 @@ get_trace_params() {
     fi
 }
 
+get_background_wrkld_params(){
+    echo "Selecting Background Workload/s"
+    if [ "${BACKGROUND_JOB}" == "hf" ];then
+        MSGS_PER_TICK=10000
+    elif [ "$BACKGROUND_JOB" == "ff" ];then
+        MSGS_PER_TICK=10000
+    fi
+
+}
+
 create_lp_io_dir_name() {
     if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]; then
         TEMP_DIR2=${NET_MODEL}-${TOTAL_NODES}nodes-${ROUTING_ALG}-${SIM_END_TIME}end-${ALLOC_POLICY}-
@@ -514,7 +525,7 @@ create_lp_io_dir_name() {
         if [ ${TRACE} == 1 ];then
             TEMP_DIR2+=-
         fi
-        TEMP_DIR2+=bkgnd-${MEAN_INTERVAL}mintvl-${TICK_INTERVAL}tintvl-${BACKGROUND_RANKS}ranks-${MSGS_PER_TICK}mpt-${MSG_SIZE}Bszmsg
+        TEMP_DIR2+=bkgnd-${BACKGROUND_JOB}-${MEAN_INTERVAL}mintvl-${TICK_INTERVAL}tintvl-${BACKGROUND_RANKS}ranks-${MSGS_PER_TICK}mpt-${MSG_SIZE}Bszmsg
     fi
     if [ ${SYNTHETIC} == 1 ]
     then
