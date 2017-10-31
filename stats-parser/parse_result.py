@@ -160,7 +160,8 @@ def parseData(df):
 def parseDataColumnar(df, dirname):
     trans = ["mean", "max", "min", "sum"]
 
-    ncs = ["Metric", "Mean", "Max", "Min", "Sum", "Rank Type", "Run Name"]
+    ncs = ["Metric", "Mean", "Max", "Min", "Sum", "Rank Type", "Run Name", "Topology", "CPU Trace", "NeMo Workload"]
+    cleanNames = nameClean(dirname)
     data = []
     dt1 = []
     for m in mets:
@@ -174,7 +175,7 @@ def parseDataColumnar(df, dirname):
             dt1 = []
             for t in trans:
                 dt1.append(getMetric(df, t, m, l))
-            data.append([m, dt1[0], dt1[1], dt1[2], dt1[3], l, dirname])
+            data.append([m, dt1[0], dt1[1], dt1[2], dt1[3], l, dirname,  cleanNames[0], cleanNames[1], cleanNames[2]])
     return pd.DataFrame(data=data, columns=ncs)
 
 
@@ -228,15 +229,24 @@ def plotter(non_col, col):
     return (p)
 
 
-def nameClean(dat,rn = "Run Name"):
+def nameClean(dat):
     #### Translations ####
-    runName = {"ftree":"Fat-Tree","dfly":"DragonFly", "sfly": "SlimFly"}
+    runName = {"ftree":"Fat-Tree","dfly":"Dragonfly", "sfly": "Slim Fly"}
     routeType={"adaptive":"Adaptive", "static":"Static", "minimal":"Minimal"}
+    neuroWorkload = {"hf":"Hopfield", "ff":"Feed Forward"}
     synthWorkload = {"cr1k":"Crystal Router", "amg1k": "AMG", "mg1k" : "MG" }
-    run_name = dat[rn]
-    rtv = run_name.split("-")
-    rn = ""
-    rn += runName[rtv[0]] + " " + routeType[rtv[5]] + " " + synthWorkload[rtv[2]]
+    rtv = dat.split("-")
+    rn = []
+    rn.append(runName[rtv[0]])
+    if len(rtv) == 7:
+        rn.append(synthWorkload[rtv[6]])
+        rn.append("none")
+    elif len(rtv) == 12:
+        rn.append("none")
+        rn.append(neuroWorkload[rtv[6]])
+    elif len(rtv) == 14:
+        rn.append(synthWorkload[rtv[6]])
+        rn.append(neuroWorkload[rtv[8]])
     return rn
 #dfly-trace-amg1k-1ms-n3456-adaptive-1csfbkgnd-10mintvl-1000000tintvl-3456ranks-10000mpt
 
