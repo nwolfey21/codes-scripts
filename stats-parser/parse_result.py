@@ -259,7 +259,7 @@ def plotterPolarBar(non_col):
 
 def plotterBar(non_col):
     cpuTrace = ["AMG", "MG", "CR"]
-    neuro = ["none", "Hopfield"]
+    neuro = ["none", "HF"]
     topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
     collector = ["Trace", "NeMo"]     #Which workload the row is collected for
     metric = "Bytes Sent"
@@ -276,21 +276,16 @@ def plotterBar(non_col):
                     temp = temp[temp['NeMo Workload'].str.contains(neuro[n])]
                     temp = temp[temp['Rank Type'].str.contains(collector[col])]
                     temp = temp[temp['Metric'].str.contains(metric)]
-                    #print "j:"+str(j)+"col:"+str(col)
-                    #print topology[t]
-                    #print cpuTrace[cpu]
-                    #print neuro[n]
-                    #print collector[col]
-                    #print metric
-                    #print data
                     data[t][j] = float(temp.loc[:,"Sum"])
                     if collector[col] == "Trace":
-                        label[t][j] = cpuTrace[cpu]
+                        if neuro[n] == "none":
+                            label[t][j] = cpuTrace[cpu]+"\nBase"
+                        else:
+                            label[t][j] = cpuTrace[cpu]
                     else:
                         label[t][j] = neuro[n]
 
     ind = np.arange(0,len(data[0])*1.8,1.8)  # the x locations for the groups
-    print ind
     width = 0.35       # the width of the bars
 
     fig, ax = plt.subplots(figsize=(7.2, 4))
@@ -301,8 +296,8 @@ def plotterBar(non_col):
     rects3 = ax.bar(ind + width*2, data[2], width, color='b')
 
     # add some text for labels, title and axes ticks
-    ax.set_ylabel('Scores')
-    ax.set_title('Scores by group and gender')
+    ax.set_ylabel(metric)
+    #ax.set_title('')
     ax.set_xticks(ind + width / 2)
     ax.set_xticklabels(label[0])
 
@@ -320,7 +315,7 @@ def plotterBar(non_col):
     #            '%d' % int(height),
     #            ha='center', va='bottom')
 
-    #ax.legend((rects1[0], rects2[0]), ('Men', 'Women'))
+    ax.legend((rects1[0], rects2[0], rects3[0]), (topology))
 
     #plt.show()
     fig.savefig('test.pdf', dpi=320, facecolor='w',
@@ -333,7 +328,7 @@ def nameClean(dat):
     #### Translations ####
     runName = {"ftree":"Fat-Tree","dfly":"Dragonfly", "sfly": "Slim Fly"}
     routeType={"adaptive":"Adaptive", "static":"Static", "minimal":"Minimal"}
-    neuroWorkload = {"hf":"Hopfield", "ff":"Feed Forward"}
+    neuroWorkload = {"hf":"HF", "ff":"Feed Forward"}
     synthWorkload = {"cr1k":"CR", "amg1k": "AMG", "mg1k" : "MG" }
     rtv = dat.split("-")
     rn = []
