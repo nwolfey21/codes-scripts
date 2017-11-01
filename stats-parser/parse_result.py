@@ -259,31 +259,36 @@ def plotterPolarBar(non_col):
 
 def plotterBar(non_col):
     cpuTrace = ["AMG", "MG", "CR"]
+    #cpuTrace = ["AMG"]
     neuro = ["none", "HF"]
     topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
     collector = ["Trace", "NeMo"]     #Which workload the row is collected for
-    metric = "Bytes Sent"
+    metric = "Bytes Recvd"
 
-    data = [["" for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
-    label = [["" for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
+    data = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
+    label = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
     for t in range(len(topology)):
         for cpu in range(len(cpuTrace)):
             for n in range(len(neuro)):
                 for col in range(len(collector)):
                     j = cpu*len(neuro)*len(collector)+n*len(collector)+col
-                    temp = non_col[non_col['Topology'].str.contains(topology[t])]
-                    temp = temp[temp['CPU Trace'] == cpuTrace[cpu]]
-                    temp = temp[temp['NeMo Workload'].str.contains(neuro[n])]
-                    temp = temp[temp['Rank Type'].str.contains(collector[col])]
-                    temp = temp[temp['Metric'].str.contains(metric)]
-                    data[t][j] = float(temp.loc[:,"Sum"])
                     if collector[col] == "Trace":
                         if neuro[n] == "none":
                             label[t][j] = cpuTrace[cpu]+"\nBase"
                         else:
                             label[t][j] = cpuTrace[cpu]
                     else:
-                        label[t][j] = neuro[n]
+                        if neuro[n] == "none":
+                            label[t][j] = neuro[n+1]+"\nBase"
+                            continue
+                        else:
+                            label[t][j] = neuro[n]
+                    temp = non_col[non_col['Topology'].str.contains(topology[t])]
+                    temp = temp[temp['CPU Trace'] == cpuTrace[cpu]]
+                    temp = temp[temp['NeMo Workload'].str.contains(neuro[n])]
+                    temp = temp[temp['Rank Type'].str.contains(collector[col])]
+                    temp = temp[temp['Metric'].str.contains(metric)]
+                    data[t][j] = float(temp.loc[:,"Sum"])
 
     ind = np.arange(0,len(data[0])*1.8,1.8)  # the x locations for the groups
     width = 0.35       # the width of the bars
