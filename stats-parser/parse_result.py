@@ -16,6 +16,8 @@ Options:
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import docopt
@@ -24,10 +26,11 @@ from docopt import docopt
 import os
 import tempfile
 from ggplot import *
+import pdb
 
 
-nemolabel = "NeMo Trace"
-cpulabel = "CPU Trace"
+nemolabel = "NeMo"
+cpulabel = " Trace"
 ts = "Total Sends"
 tr = "Total Recvs"
 bs = "Bytes Sent"
@@ -229,12 +232,109 @@ def plotter(non_col, col):
     return (p)
 
 
+def plotterPolarBar(non_col):
+    #Create figure for visualization
+    #fig, ax = plt.subplots(figsize=(5.2, 4))
+    # Compute pie slices
+    N = 4
+    theta = np.linspace((2.0*np.pi/N)/2.0, 2.0 * np.pi, N, endpoint=False)
+    radii = np.array(range(1,N+1))
+    width = 2.0*np.pi / N
+
+    fig = plt.figure(figsize=(5.2,4))
+    ax = fig.add_subplot(111, projection='polar')
+    bars = ax.bar(theta, radii, width=width, bottom=0.0)
+
+    # Use custom colors and opacity
+    for r, bar in zip(radii, bars):
+        bar.set_facecolor(plt.cm.viridis(r / 24.))
+        bar.set_alpha(0.5)
+
+    #plt.show()
+    fig.savefig('test.pdf', dpi=320, facecolor='w',
+                edgecolor='w', orientation='portrait', papertype=None,
+                format=None, transparent=False, bbox_inches=None, 
+                pad_inches=0.25, frameon=None)
+
+
+def plotterBar(non_col):
+    cpuTrace = ["AMG", "MG", "CR"]
+    neuro = ["none", "Hopfield"]
+    topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
+    collector = ["Trace", "NeMo"]     #Which workload the row is collected for
+    metric = "Bytes Sent"
+
+    data = [["" for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
+    label = [["" for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
+    for t in range(len(topology)):
+        for cpu in range(len(cpuTrace)):
+            for n in range(len(neuro)):
+                for col in range(len(collector)):
+                    j = cpu*len(neuro)*len(collector)+n*len(collector)+col
+                    temp = non_col[non_col['Topology'].str.contains(topology[t])]
+                    temp = temp[temp['CPU Trace'] == cpuTrace[cpu]]
+                    temp = temp[temp['NeMo Workload'].str.contains(neuro[n])]
+                    temp = temp[temp['Rank Type'].str.contains(collector[col])]
+                    temp = temp[temp['Metric'].str.contains(metric)]
+                    #print "j:"+str(j)+"col:"+str(col)
+                    #print topology[t]
+                    #print cpuTrace[cpu]
+                    #print neuro[n]
+                    #print collector[col]
+                    #print metric
+                    #print data
+                    data[t][j] = float(temp.loc[:,"Sum"])
+                    if collector[col] == "Trace":
+                        label[t][j] = cpuTrace[cpu]
+                    else:
+                        label[t][j] = neuro[n]
+
+    ind = np.arange(0,len(data[0])*1.8,1.8)  # the x locations for the groups
+    print ind
+    width = 0.35       # the width of the bars
+
+    fig, ax = plt.subplots(figsize=(7.2, 4))
+    rects1 = ax.bar(ind, data[0], width, color='r')
+
+    rects2 = ax.bar(ind + width, data[1], width, color='g')
+
+    rects3 = ax.bar(ind + width*2, data[2], width, color='b')
+
+    # add some text for labels, title and axes ticks
+    ax.set_ylabel('Scores')
+    ax.set_title('Scores by group and gender')
+    ax.set_xticks(ind + width / 2)
+    ax.set_xticklabels(label[0])
+
+    #Attach a text label above each bar displaying its height
+    #for rect in rects1:
+    #    height = rect.get_height()
+    #    ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+    #            '%d' % int(height),
+    #            ha='center', va='bottom')
+
+    #Attach a text label above each bar displaying its height
+    #for rect in rects2:
+    #    height = rect.get_height()
+    #    ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+    #            '%d' % int(height),
+    #            ha='center', va='bottom')
+
+    #ax.legend((rects1[0], rects2[0]), ('Men', 'Women'))
+
+    #plt.show()
+    fig.savefig('test.pdf', dpi=320, facecolor='w',
+                edgecolor='w', orientation='portrait', papertype=None,
+                format=None, transparent=False, bbox_inches=None, 
+                pad_inches=0.25, frameon=None)
+
+
 def nameClean(dat):
     #### Translations ####
     runName = {"ftree":"Fat-Tree","dfly":"Dragonfly", "sfly": "Slim Fly"}
     routeType={"adaptive":"Adaptive", "static":"Static", "minimal":"Minimal"}
     neuroWorkload = {"hf":"Hopfield", "ff":"Feed Forward"}
-    synthWorkload = {"cr1k":"Crystal Router", "amg1k": "AMG", "mg1k" : "MG" }
+    synthWorkload = {"cr1k":"CR", "amg1k": "AMG", "mg1k" : "MG" }
     rtv = dat.split("-")
     rn = []
     rn.append(runName[rtv[0]])
@@ -281,7 +381,8 @@ if __name__ == '__main__':
         opdat.to_csv("op_dat.csv")
 
     if(arguments['--plot']):
-        p = plotter(noncol, colummar)
+        plotterBar(noncol)
+        #p = plotter(noncol, colummar)
         #print(p)
 
 
