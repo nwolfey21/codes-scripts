@@ -19,14 +19,14 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import seaborn as sns
+#import seaborn as sns
 import docopt
 from pathlib import Path
-from docopt import docopt
+#from docopt import docopt
 import os
 import tempfile
 from ggplot import *
-import pdb
+#import pdb
 
 
 nemolabel = "NeMo"
@@ -66,13 +66,13 @@ def readFilePD(filename):
 
 def readFile(filename):
     return readFilePD(filename)
-    keyv = ["MPI Rank ID"]
+    #keyv = ["MPI Rank ID"]
     data = []
     keys = []
-    runname = ""
+    #runname = ""
     with open(filename, 'r') as f:
         fullData = f.readlines()
-        runname = f.name
+    #    runname = f.name
     fullData = fullData[1:]
     for line in fullData:
         dl = (line.lstrip(" ").rstrip("\n").split(" "))
@@ -147,7 +147,7 @@ def setNeMoLabel(df):
 
 def parseData(df):
     trans = ["mean", "max", "min", "sum"]
-    types = ["N"]
+    #types = ["N"]
     results = {}
     results_length = {}
     for m in mets:
@@ -182,9 +182,9 @@ def parseDataColumnar(df, dirname):
     return pd.DataFrame(data=data, columns=ncs)
 
 
-def parseDataNoFilter(df, dirname):
-    ncs = ["Metric", "Value", "Rank Type", "Run Name"]
-    data = []
+#def parseDataNoFilter(df, dirname):
+#    ncs = ["Metric", "Value", "Rank Type", "Run Name"]
+#    data = []
 
 
 def read(args, run_type):
@@ -335,7 +335,7 @@ def plotterBar(non_col):
 def nameClean(dat):
     #### Translations ####
     runName = {"ftree":"Fat-Tree","dfly":"Dragonfly", "sfly": "Slim Fly"}
-    routeType={"adaptive":"Adaptive", "static":"Static", "minimal":"Minimal"}
+    #routeType={"adaptive":"Adaptive", "static":"Static", "minimal":"Minimal"}
     neuroWorkload = {"hf":"HF", "ff":"Feed Forward"}
     synthWorkload = {"cr1k":"CR", "amg1k": "AMG", "mg1k" : "MG" }
     rtv = dat.split("-")
