@@ -263,7 +263,7 @@ def plotterBar(non_col):
     neuro = ["none", "HF"]
     topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
     collector = ["Trace", "NeMo"]     #Which workload the row is collected for
-    metric = "Bytes Recvd"
+    metric = "Bytes Recvd"            #Options: Bytes Sent, Bytes Recvd, Total Sends, Total Recvs
 
     data = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
     label = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
@@ -272,20 +272,23 @@ def plotterBar(non_col):
             for n in range(len(neuro)):
                 for col in range(len(collector)):
                     j = cpu*len(neuro)*len(collector)+n*len(collector)+col
+                    cpuTraceInstance = cpuTrace[cpu]
+                    neuroInstance = neuro[n]
                     if collector[col] == "Trace":
-                        if neuro[n] == "none":
+                        if neuroInstance == "none":
                             label[t][j] = cpuTrace[cpu]+"\nBase"
                         else:
                             label[t][j] = cpuTrace[cpu]
                     else:
-                        if neuro[n] == "none":
+                        if neuroInstance == "none":
                             label[t][j] = neuro[n+1]+"\nBase"
-                            continue
+                            neuroInstance = neuro[n+1]
+                            cpuTraceInstance = "none"
                         else:
-                            label[t][j] = neuro[n]
+                            label[t][j] = neuroInstance
                     temp = non_col[non_col['Topology'].str.contains(topology[t])]
-                    temp = temp[temp['CPU Trace'] == cpuTrace[cpu]]
-                    temp = temp[temp['NeMo Workload'].str.contains(neuro[n])]
+                    temp = temp[temp['CPU Trace'] == cpuTraceInstance]
+                    temp = temp[temp['NeMo Workload'].str.contains(neuroInstance)]
                     temp = temp[temp['Rank Type'].str.contains(collector[col])]
                     temp = temp[temp['Metric'].str.contains(metric)]
                     data[t][j] = float(temp.loc[:,"Sum"])
@@ -294,11 +297,11 @@ def plotterBar(non_col):
     width = 0.35       # the width of the bars
 
     fig, ax = plt.subplots(figsize=(7.2, 4))
-    rects1 = ax.bar(ind, data[0], width, color='r')
+    rects1 = ax.bar(ind, data[0], width, color='#ffb3ba', edgecolor = ['r' for u in range(len(data[0]))], hatch="////", lw=0.8)
 
-    rects2 = ax.bar(ind + width, data[1], width, color='g')
+    rects2 = ax.bar(ind + width+0.1, data[1], width, color='#baffc9', edgecolor = ['g' for u in range(len(data[1]))], hatch="\\\\", lw=0.8)
 
-    rects3 = ax.bar(ind + width*2, data[2], width, color='b')
+    rects3 = ax.bar(ind +(width+0.1)*2, data[2], width, color='#bae1ff', edgecolor = ['b' for u in range(len(data[2]))], hatch="", lw=0.8)
 
     # add some text for labels, title and axes ticks
     ax.set_ylabel(metric)
