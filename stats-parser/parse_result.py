@@ -19,10 +19,11 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 #import seaborn as sns
 import docopt
 from pathlib import Path
-#from docopt import docopt
+from docopt import docopt
 import os
 import tempfile
 from ggplot import *
@@ -35,9 +36,10 @@ ts = "Total Sends"
 tr = "Total Recvs"
 bs = "Bytes Sent"
 br = "Bytes Recvd"
-mets = [ts, tr, bs, br]
+et = "End Time"
+mets = [ts, tr, bs, br, et]
 
-formatc = ["lpid", "mpid", "Total Sends", "Total Recvs", "Bytes Sent", "Bytes Recvd",
+formatc = ["lpid", "mpid", "Total Sends", "Total Recvs", "Bytes Sent", "Bytes Recvd", "End Time",
           "Send Time", "Comm. Time", "Compute Time", "Job ID", "Run Type", "Run Name"]
 
 def readFilePD(filename):
@@ -257,16 +259,11 @@ def plotterPolarBar(non_col):
                 pad_inches=0.25, frameon=None)
 
 
-def plotterBar(non_col):
-    cpuTrace = ["AMG", "MG", "CR"]
-    #cpuTrace = ["AMG"]
-    neuro = ["none", "HF"]
-    topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
-    collector = ["Trace", "NeMo"]     #Which workload the row is collected for
-    metric = "Bytes Recvd"            #Options: Bytes Sent, Bytes Recvd, Total Sends, Total Recvs
-
-    data = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
-    label = [[0 for j in range(len(cpuTrace)*len(neuro)*len(collector))] for i in range(len(topology))]
+# Function gets the values for all runs including the base runs
+def getPlotterValues(non_col, cpuTrace, topology, neuro, collector, metric, stat):
+    listSize = len(cpuTrace)*len(neuro)*len(collector)
+    data = [[0 for j in range(listSize)] for i in range(len(topology))]
+    label = [[0 for j in range(listSize)] for i in range(len(topology))]
     for t in range(len(topology)):
         for cpu in range(len(cpuTrace)):
             for n in range(len(neuro)):
@@ -291,7 +288,61 @@ def plotterBar(non_col):
                     temp = temp[temp['NeMo Workload'].str.contains(neuroInstance)]
                     temp = temp[temp['Rank Type'].str.contains(collector[col])]
                     temp = temp[temp['Metric'].str.contains(metric)]
-                    data[t][j] = float(temp.loc[:,"Sum"])
+                    data[t][j] = float(temp.loc[:,stat])
+    return data, label
+
+
+# Function gets the values for the metrics for only multi-job runs as a percentage of the base run
+def getPlotterPercents(non_col, cpuTrace, topology, neuro, collector, metric, stat):
+    pdb.set_trace()
+    listSize = len(cpuTrace)*len(neuro)*len(collector)
+    data = [[0 for j in range(listSize)] for i in range(len(topology))]
+    label = [[0 for j in range(listSize)] for i in range(len(topology))]
+    for t in range(len(topology)):
+        for cpu in range(len(cpuTrace)):
+            for n in range(len(neuro)):
+                for col in range(len(collector)):
+                    j = cpu*len(neuro)*len(collector)+n*len(collector)+col
+                    cpuTraceInstance = cpuTrace[cpu]
+                    neuroInstance = neuro[n]
+                    temp = non_col[non_col['Topology'].str.contains(topology[t])]
+                    temp = temp[temp['Rank Type'].str.contains(collector[col])]
+                    temp = temp[temp['Metric'].str.contains(metric)]
+                    if collector[col] == "Trace":
+                        label[t][j] = cpuTrace[cpu]
+                        temp = temp[temp['CPU Trace'] == cpuTraceInstance]
+                        base = temp[temp['NeMo Workload'].str.contains('none')]
+                        numerator = temp[temp['NeMo Workload'] == neuroInstance]
+                    else:
+                        label[t][j] = neuroInstance
+                        temp = temp[temp['NeMo Workload'] == neuroInstance]
+                        base = temp[temp['CPU Trace'].str.contains('none')]
+                        numerator = temp[temp['CPU Trace'] == cpuTraceInstance]
+                    data[t][j] = (float(numerator.loc[:,stat]) - float(base.loc[:,stat]))/float(base.loc[:,stat]) * 100.0
+    return data, label
+
+
+# Attach a text label above each bar displaying its height
+def plotterBarAddHeightsLabels(ax, rects):
+    for rect in rects:
+        height = rect.get_height()
+        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                '%d' % int(height), ha='center', va='bottom')
+
+def plotterBar(non_col):
+    cpuTrace = ["AMG"]
+    #cpuTrace = ["AMG", "MG", "CR"]
+    #cpuTrace = ["AMG"]
+    neuro = ["none", "HF"]
+    topology = ["Slim Fly", "Dragonfly", "Fat-Tree"]
+    collector = ["Trace", "NeMo"]     #Which workload the row is collected for
+    metric = "End Time"            #Options: Bytes Sent, Bytes Recvd, Total Sends, Total Recvs, End Time
+    stat = "Max"                   #Statistical measure over terminals. Options: Min, Max, Mean, Sum
+
+    #Making call for values 
+    data, label = getPlotterValues(non_col, cpuTrace, topology, neuro, collector, metric, stat)
+    #Making call for Percentages
+    data, label = getPlotterPercents(non_col, cpuTrace, topology, [neuro[1]], collector, metric, stat)
 
     ind = np.arange(0,len(data[0])*1.8,1.8)  # the x locations for the groups
     width = 0.35       # the width of the bars
@@ -304,24 +355,19 @@ def plotterBar(non_col):
     rects3 = ax.bar(ind +(width+0.1)*2, data[2], width, color='#bae1ff', edgecolor = ['b' for u in range(len(data[2]))], hatch="", lw=0.8)
 
     # add some text for labels, title and axes ticks
-    ax.set_ylabel(metric)
+    if metric == "End Time":
+        ax.set_ylabel("Slowdown (result-base)/base")
+    else:
+        ax.set_ylabel(metric)
     #ax.set_title('')
     ax.set_xticks(ind + width / 2)
     ax.set_xticklabels(label[0])
+    formatter = FuncFormatter(lambda y, pos: "%d%%" % (y))
+    ax.yaxis.set_major_formatter(formatter)
 
-    #Attach a text label above each bar displaying its height
-    #for rect in rects1:
-    #    height = rect.get_height()
-    #    ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
-    #            '%d' % int(height),
-    #            ha='center', va='bottom')
-
-    #Attach a text label above each bar displaying its height
-    #for rect in rects2:
-    #    height = rect.get_height()
-    #    ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
-    #            '%d' % int(height),
-    #            ha='center', va='bottom')
+    plotterBarAddHeightsLabels(ax, rects1)
+    plotterBarAddHeightsLabels(ax, rects2)
+    plotterBarAddHeightsLabels(ax, rects3)
 
     ax.legend((rects1[0], rects2[0], rects3[0]), (topology))
 
