@@ -99,6 +99,7 @@ NODE_EAGER_LIMIT=16000
 get_net_model_params() {
 if [ "$NET_MODEL" == "ftree" ]
 then
+    FTREE_MODEL=ftree10    #Options: ftree (summit approx w/11 pods), ftree10 (ftree with 10 pods)
     ROUTING_ALG=static     #Options: static,adaptive
     NUM_LEVELS=3
     VC_SIZE=65536
@@ -112,9 +113,19 @@ then
     then
         ROUTING_FOLDER=/home/noah/Dropbox/RPI/Research/Networks/Fat-Tree-Topo/summit
     fi
-    DOT_FILE=summit-3564
-    DUMP_TOPO=0
-    BACKGROUND_RANKS=3456
+    if [ "${FTREE_MODEL}" == "ftree" ];then
+        REPS=198
+        ROUTING_FOLDER+=-3564
+        DOT_FILE=summit-3564
+        DUMP_TOPO=0
+        BACKGROUND_RANKS=3564
+    elif [ "${FTREE_MODEL}" == "ftree10" ];then
+        REPS=180
+        ROUTING_FOLDER+=-3240
+        DOT_FILE=summit-3240
+        DUMP_TOPO=0
+        BACKGROUND_RANKS=3240
+    fi
     #BACKGROUND_RANKS_BATCH=("446" "891" "1782" "3564" "7128")
     #BACKGROUND_RANKS_BATCH=("3564")
 elif [ "$NET_MODEL" == "sfly" ]
@@ -131,6 +142,7 @@ then
     #BACKGROUND_RANKS_BATCH=("3042")
 elif [ "$NET_MODEL" == "dfly" ]
 then
+    DFLY_MODEL=theta8       # Options: theta (regular theta), theta8 (8 group theta)
     ROUTING_ALG=adaptive    # Options: minimal, nonminimal, adaptive
     LOCAL_VC_SIZE=65536
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
@@ -142,9 +154,19 @@ then
     #LOCAL_BANDWIDTH=5.25
     #CN_BANDWIDTH=16.0
     #GLOBAL_BANDWIDTH=4.69
-    INTRA_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/intra-theta
-    INTER_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/inter-theta
-    BACKGROUND_RANKS=3456
+    if [ "${DFLY_MODEL}" == "theta" ];then
+        INTRA_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/intra-theta
+        INTER_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/inter-theta
+        BACKGROUND_RANKS=3456
+        REPS=864
+        NUM_GROUPS=9
+    elif [ "${DFLY_MODEL}" == "theta8" ];then
+        INTRA_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/intra-theta-8group
+        INTER_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/inter-theta-8group
+        BACKGROUND_RANKS=3072
+        REPS=768
+        NUM_GROUPS=8
+    fi
     #BACKGROUND_RANKS_BATCH=("432" "864" "1728" "3456" "6912")
 fi
 }
@@ -180,8 +202,6 @@ exec_loop() {
                 # Set trace params
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
 
-                SIM_END_TIME=1000
-
                 # Setting Trace Sampling metrics
                 echo sim end time: ${SIM_END_TIME} sample points: ${SAMPLING_POINTS}
                 SAMPLING_INTERVAL=$(( ${SIM_END_TIME} / ${SAMPLING_POINTS} ))
@@ -196,7 +216,6 @@ exec_loop() {
                     echo sys 3k
                     if [ "$NET_MODEL" == "ftree" ]
                     then
-                        REPS=198
                         MODELNET_FATTREE=18
                     elif [ "$NET_MODEL" == "sfly" ]
                     then
@@ -208,7 +227,6 @@ exec_loop() {
                         MODELNET_SLIMFLY=9
                     elif [ "$NET_MODEL" == "dfly" ]
                     then
-                        REPS=864
                         MODELNET_DRAGONFLY_CUSTOM=4
                         MODELNET_DRAGONFLY_CUSTOM_ROUTER=1
                     fi
@@ -253,7 +271,6 @@ exec_loop() {
                 then
                     NUM_ROUTER_ROWS=6
                     NUM_ROUTER_COLS=16
-                    NUM_GROUPS=9
                     NUM_GLOBAL_CHANNELS=4
                     NUM_CNS_PER_ROUTER=${MODELNET_DRAGONFLY_CUSTOM}
                     MODELNET_ORDER='("dragonfly_custom","dragonfly_custom_router");'
@@ -308,6 +325,13 @@ exec_loop() {
                     EXE_PATH=${BUILD_DIR}/src/network-workloads/model-net-mpi-replay
                 else
                     EXE_PATH=${BUILD_DIR}/src/network-workloads/model-net-synthetic-slimfly
+                fi
+
+                # Check if need to change heterogeneous alloc policy for single job run
+                if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
+                    if [ ${TRACE} == 0 ] || [ ${BACKGROUND} == 0 ];then
+                        ALLOC_POLICY=("CONT")
+                    fi
                 fi
 
                 # Create LP_IO Directory Name
