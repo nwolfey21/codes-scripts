@@ -35,3 +35,17 @@ Scripts for automating the building/executing processes for CODES, visualizing m
 ### visualizations/line-sampling.py
 * Parses sampling output files generated at the MPI replay layer and constructs time-series line graphs where each line represents the performance over simulation time of a given MPI rank for a given metric.
 * Filename used: mpi-sampling-stats
+
+### visualizations/ftree-graph-layout-vis.py
+* Parses connection files for the fat-tree model to visualize the simulated fat-tree network layout
+* Connection files are generated and dumped inside the lp-io-dir if '#define FATTREE_CONNECTIONS 1' is set at the top of src/networks/model-net/fattree.c
+* Currently only single rail/plane configurations are supported
+* Supports many different visual representations of the graph including:
+  - Layered: Traditional multi-layered fat-tree layout
+  - Spring: Spring based approach for spacing of nodes
+  - Force: Fruchterman Reingold force directed algorithm for spacing nodes
+  - Random: Results may vary
+  - Circular: All switches and terminals are arranged in a circle
+  - Shell: Arranges switches and terminals in concentric circles
+  - Graphviz: Formatted using graphviz utility
+
