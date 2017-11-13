@@ -20,7 +20,7 @@ TRACE=1             # Whether or not to do a trace workload
 SYNTHETIC=0         # Whether or not to do a synthetic workload
 BACKGROUND=1        # Whether or not to do a Neuromorphic background workload
 ENABLE_SAMPLING=1   # Sampling Parameters (Only if running TRACE workload or BACKGROUND workload)
-COPY_ANALYSIS=0     # Whether or not to copy output directory to an analysis directory
+COPY_ANALYSIS=1     # Whether or not to copy output directory to an analysis directory
 ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/   #Only needed if COPY_ANALYSIS=1
 EXE_SYS=server 	    # Execution system. Options: CCI, server
 
@@ -31,9 +31,11 @@ echo "Setting Paths"
 if [ "$EXE_SYS" == "CCI" ]; then
     BUILD_DIR=/gpfs/u/home/SPNR/SPNRwlfn/scratch/build-drp-codes-nemo/build-codes-unified
     CODES_DIR=/gpfs/u/home/SPNR/SPNRwlfn/barn/codes-unified/codes
+    TRACE_DIR=/gpfs/u/home/SPNR/SPNRwlfn/scratch/dumpi-traces
 elif [ "$EXE_SYS" == "server" ]; then
     CODES_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes
     BUILD_DIR=/scratch/codes-nemo/build/build-codes
+    TRACE_DIR=/scratch/networks/dumpi-traces
 fi
 if [ "$VIS" == 1 ]; then
     PROCESSING_EXE_PATH=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/scripts/modelnet-analysis/parse-sampling.py
@@ -48,16 +50,19 @@ NET_MODEL=ftree      # Options: ftree, sfly, dfly
 NET_MODEL_SIZE=3k   # Size of HPC system: 3k, 74k, 1m
 
 # Server Execution Params
-NUM_PROCESSES=1     # Physical MPI processes
-SYNCH=1             # ROSS event scheduling protocol
-EXTRAMEM=15500000   # Extra memory to allocate per MPI process
+NUM_PROCESSES=16       # Physical MPI processes
+SYNCH=3                # ROSS event scheduling protocol
+EXTRAMEM=800000        # Extra memory to allocate per MPI process
+BATCH=2                # ROSS batch parameter
+GVT=256                 # ROSS gvt parameter
+MAX_OPT_LOOKAHEAD=1024 # ROSS max opt lookahead parameter
 
 # CCI Execution Params (in addition to Server Execution Params)
-TIME_ALLOC=60       # Requested job allocation time limit
-NUM_NODES=16        # Requested job number of nodes
+TIME_ALLOC=200       # Requested job allocation time limit
+NUM_NODES=1        # Requested job number of nodes
 
 # Simulation End Time
-SIM_END_TIME=6000000    # Currently over written for each trace
+SIM_END_TIME=1000000    # Currently over written for each trace
 
 # Sampling Points
 SAMPLING_POINTS=100     # Number of points in time to sample trace metrics during the simulation (ENABLE_SAMPLING flag must be on)
@@ -81,8 +86,9 @@ MSGS_PER_TICK=10000     # Number of spike messages to inject per chip per tick. 
 BACKGROUND_RANKS=3456   # Number of neuromorphic chips. Currently overwritten for each net model in "Network Model Params" section below
 
 # Allocation Protocol (Trace workload only)
-ALLOC_POLICY=("CONT")  # Options: CONT,cluster, and rand (supported for one or more trace/background/combined jobs)
+ALLOC_POLICY=("heterogeneous")  # Options: CONT,cluster, and rand (supported for one or more trace/background/combined jobs)
                             # Options Continued: heterogeneous (supported for running one combined trace and background job)
+                            # Currently overwritten in execution for loop below
 
 # Common Network Params
 MESSAGE_SIZE=640
@@ -155,14 +161,14 @@ then
     #CN_BANDWIDTH=16.0
     #GLOBAL_BANDWIDTH=4.69
     if [ "${DFLY_MODEL}" == "theta" ];then
-        INTRA_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/intra-theta
-        INTER_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/inter-theta
+        INTRA_GROUP_CONNECTIONS=${CODES_DIR}/src/network-workloads/conf/dragonfly-custom/intra-theta
+        INTER_GROUP_CONNECTIONS=${CODES_DIR}/src/network-workloads/conf/dragonfly-custom/inter-theta
         BACKGROUND_RANKS=3456
         REPS=864
         NUM_GROUPS=9
     elif [ "${DFLY_MODEL}" == "theta8" ];then
-        INTRA_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/intra-theta-8group
-        INTER_GROUP_CONNECTIONS=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/src/network-workloads/conf/dragonfly-custom/inter-theta-8group
+        INTRA_GROUP_CONNECTIONS=${CODES_DIR}/src/network-workloads/conf/dragonfly-custom/intra-theta-8group
+        INTER_GROUP_CONNECTIONS=${CODES_DIR}/src/network-workloads/conf/dragonfly-custom/inter-theta-8group
         BACKGROUND_RANKS=3072
         REPS=768
         NUM_GROUPS=8
@@ -350,8 +356,6 @@ exec_loop() {
                         create_alloc_conf
                     fi
 
-                    #exit
-
                     # Execute Simulation
                     WRKLD_TYPE=dumpi
                     echo Executing Simultion...
@@ -365,20 +369,25 @@ exec_loop() {
                         fi
                         if [ "$EXE_SYS" == "CCI" ]
                         then
-                            srun -t ${TIME_ALLOC} -N ${NUM_NODES} -n ${NUM_PROCESSES}  -o ${JOBS}-${ROUTING_ALG}-${NET_MODEL_SIZE} ${EXE_PATH} --synch=${SYNCH} \
-                                --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
-                                --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
-                                --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
-                                --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --end=${SIM_END_TIME} \
-                                -- ${NETWORK_CONF}
-                            echo srun -t ${TIME_ALLOC} -N ${NUM_NODES} -n ${NUM_PROCESSES}  -o ${JOBS}-${ROUTING_ALG}-${NET_MODEL_SIZE} ${EXE_PATH} --synch=${SYNCH} \
-                                --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
-                                --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
-                                --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
-                                --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --end=${SIM_END_TIME} \
-                                -- ${NETWORK_CONF}
+                            SBATCH_SCRIPT=${TEMP_LP_IO_DIR}/sbatch-script.sh
+                            echo "#!/bin/bash" > ${SBATCH_SCRIPT}
+                            echo -n "srun -t ${TIME_ALLOC} -N ${NUM_NODES} -n ${NUM_PROCESSES}  -o ${TEMP_LP_IO_DIR}/srun-log ${EXE_PATH} --synch=${SYNCH}" >> ${SBATCH_SCRIPT}
+                            echo -n " --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD}" >> ${SBATCH_SCRIPT}
+                            echo -n " --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE}" >> ${SBATCH_SCRIPT}
+                            echo -n " --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+                            echo -n " --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL}" >> ${SBATCH_SCRIPT}
+                            echo -n " --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME}" >> ${SBATCH_SCRIPT}
+                            echo -n " --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL}" >> ${SBATCH_SCRIPT}
+                            echo " -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output " >> ${SBATCH_SCRIPT}
+                            echo "# Save all variables to file" >> ${SBATCH_SCRIPT}
+                            ( set -o posix ; set ) >> ${TEMP_LP_IO_DIR}/execution-variables
+                            # Copy config files to the LP-IO-DIR
+                            move_config_files
+                            chmod +x ${SBATCH_SCRIPT}
+                            sbatch --time=${TIME_ALLOC} --nodes=${NUM_NODES} --mail-type=END --mail-user=nwolfey21@gmail.com ${SBATCH_SCRIPT}
+                            echo "Submitted Sbatch job ${LP_IO_DIR}" 
                         else
-                            mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
+                            mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
                                 --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
                                 --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                 --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
@@ -392,6 +401,8 @@ exec_loop() {
                                 --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
                                 --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} \
                                 -- ${NETWORK_CONF}
+                            # Copy config files to the LP-IO-DIR
+                            move_config_files
                         fi
                     else
                         mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
@@ -400,39 +411,9 @@ exec_loop() {
                         echo mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
                             --traffic=${TRAFFIC} --load=${LOAD} --lp-io-dir=${LP_IO_DIR} \
                             -- ${NETWORK_CONF}
+                        # Copy config files to the LP-IO-DIR
+                        move_config_files
                     fi
-
-                    # Move Simulation config files to lp-io-dir
-                    #exit
-                    echo Copying Files to LP-IO Directory...
-                    mv ${NETWORK_CONF} ${LP_IO_DIR}
-                    if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]
-                    then
-                        mv ${ALLOC_CONF} ${LP_IO_DIR}
-                        mv ${ALLOC_CONFIG_PATH} ${LP_IO_DIR}
-                        mv ${WRKLD_CONF_FILE} ${LP_IO_DIR}
-                    fi
-                    mv ${TEMP_LP_IO_DIR}/stdout-output ${LP_IO_DIR}
-                    if [ "$NET_MODEL" == "dfly" ]
-                    then
-                        mv dragonfly* ${LP_IO_DIR}
-                    fi
-                    # Remove temp lp io dir
-                    rm -rf ${TEMP_LP_IO_DIR}
-                    # Save all variables to file
-                    ( set -o posix ; set ) >> ${LP_IO_DIR}/execution-variables
-                    # Copy output folder to analysis directory
-                    if [ ${COPY_ANALYSIS} == 1 ]
-                    then
-                        cp -rf ${LP_IO_DIR} ${ANALYSIS_DIR}
-                        rm -rf ${LP_IO_DIR}
-                    fi
-                    # Delete unused genereated files
-                    echo Deleting Unused Generated Files
-    #                rm mpi*
-                    rm -rf mpi-aggregate*
-                    rm -rf mpi-workload*
-                    rm -rf ross.csv
                 fi
                 # Execute Post Processing and Visualization in Background
                 if [ ${VIS} == 1 ]
@@ -458,58 +439,58 @@ get_trace_params() {
     echo "Selecting Application Trace/s"
     if [ "$JOBS" == "amg1k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/df_AMG_n1728_dumpi/dumpi-2014.03.03.14.55.50-")
+        TRACE_PREFIXES=("${TRACE_DIR}/df_AMG_n1728_dumpi/dumpi-2014.03.03.14.55.50-")
         RANKS_PER_JOB=("1728")
         SIM_END_TIME=1000000
     elif [ "$JOBS" == "amg13k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/df_AMG_n13824_dumpi/dumpi-2014.03.03.15.09.03-")
+        TRACE_PREFIXES=("${TRACE_DIR}/df_AMG_n13824_dumpi/dumpi-2014.03.03.15.09.03-")
         RANKS_PER_JOB=("13824")
     elif [ "$JOBS" == "mg1k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/MultiGrid_C_n1000_dumpi/dumpi-2014.03.07.00.25.12-")
+        TRACE_PREFIXES=("${TRACE_DIR}/MultiGrid_C_n1000_dumpi/dumpi-2014.03.07.00.25.12-")
         RANKS_PER_JOB=("1000")
-        SIM_END_TIME=6000000
+        SIM_END_TIME=1000000
     elif [ "$JOBS" == "mg10k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/MultiGrid_C_n10648_dumpi/dumpi-2014.03.07.00.39.10-")
+        TRACE_PREFIXES=("${TRACE_DIR}/MultiGrid_C_n10648_dumpi/dumpi-2014.03.07.00.39.10-")
         RANKS_PER_JOB=("10648")
     elif [ "$JOBS" == "mg110k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/MultiGrid_C_n110592_dumpi/dumpi-2014.03.13.03.09.22-")
+        TRACE_PREFIXES=("${TRACE_DIR}/MultiGrid_C_n110592_dumpi/dumpi-2014.03.13.03.09.22-")
         RANKS_PER_JOB=("110592")
     elif [ "$JOBS" == "cr1k" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/CrystalRouter_n1000_dumpi/dumpi--2014.04.23.12.17.17-")
+        TRACE_PREFIXES=("${TRACE_DIR}/CrystalRouter_n1000_dumpi/dumpi--2014.04.23.12.17.17-")
         RANKS_PER_JOB=("1000")
-        SIM_END_TIME=6000000
+        SIM_END_TIME=1000000
     elif [ "$JOBS" == "cr10" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/CrystalRouter_n10_dumpi/dumpi--2014.04.23.12.08.27-")
+        TRACE_PREFIXES=("${TRACE_DIR}/CrystalRouter_n10_dumpi/dumpi--2014.04.23.12.08.27-")
         RANKS_PER_JOB=("10")
     elif [ "$JOBS" == "cr10regen" ]
     then
-        TRACE_PREFIXES=("/scratch/networks/dumpi-traces/CrystalRouter_n10_dumpi_regenerated/dumpi--2014.04.23.12.08.27-")
+        TRACE_PREFIXES=("${TRACE_DIR}/CrystalRouter_n10_dumpi_regenerated/dumpi--2014.04.23.12.08.27-")
         RANKS_PER_JOB=("10")
     elif [ "$JOBS" == "nemo8" ]
     then
-        TRACE_PREFIXES=("/scratch/codes-nemo/dumpi-traces/UM/nemo8/dumpi--17.10.04.13.37.57-processed-n2d-")
+        TRACE_PREFIXES=("${TRACE_DIR}/UM/nemo8/dumpi--17.10.04.13.37.57-processed-n2d-")
         RANKS_PER_JOB=("8")
     elif [ "$JOBS" == "nemo760" ]
     then
-        TRACE_PREFIXES=("/scratch/codes-nemo/dumpi-traces/UM/nemo760/dumpi--17.10.09.16.12.50-processed-n2d-")
+        TRACE_PREFIXES=("${TRACE_DIR}/UM/nemo760/dumpi--17.10.09.16.12.50-processed-n2d-")
         RANKS_PER_JOB=("760")
     elif [ "$JOBS" == "nemo1521sat" ]
     then
-        TRACE_PREFIXES=("/scratch/codes-nemo/dumpi-traces/SAT/nemo1521/dumpi--17.10.08.09.31.44-processed-n2d-")
+        TRACE_PREFIXES=("${TRACE_DIR}/SAT/nemo1521/dumpi--17.10.08.09.31.44-processed-n2d-")
         RANKS_PER_JOB=("1521")
     elif [ "$JOBS" == "nemo3042" ]
     then
-        TRACE_PREFIXES=("/scratch/codes-nemo/dumpi-traces/UM/nemo3042/dumpi--17.10.07.14.43.38-processed-n2d-")
+        TRACE_PREFIXES=("${TRACE_DIR}/UM/nemo3042/dumpi--17.10.07.14.43.38-processed-n2d-")
         RANKS_PER_JOB=("3042")
     elif [ "$JOBS" == "nemo6084" ]
     then
-        TRACE_PREFIXES=("/scratch/codes-nemo/dumpi-traces/UM/nemo6084/dumpi--17.10.07.23.16.18-processed-n2d-")
+        TRACE_PREFIXES=("${TRACE_DIR}/UM/nemo6084/dumpi--17.10.07.23.16.18-processed-n2d-")
         RANKS_PER_JOB=("6084")
     fi
 }
@@ -562,7 +543,6 @@ create_lp_io_dir_name() {
 
 create_net_conf() {
     echo "Creating network config file"
-    mkdir -p ${BUILD_DIR}/${LP_IO_DIR}
     if [ "$NET_MODEL" == "sfly" ]
     then
         # Generate slim fly network model conf file
@@ -836,6 +816,68 @@ create_alloc_conf() {
     if [ ${BACKGROUND} == 1 ]
     then
         echo -n -e "${BACKGROUND_RANKS} synthetic" >> ${WRKLD_CONF_FILE}
+    fi
+}
+
+move_config_files() {
+    # Move Simulation config files to lp-io-dir
+    echo "Moving Simulation config files to lp-io-dir"
+    if [ "${EXE_SYS}" == "CCI" ];then
+        echo "" >> ${SBATCH_SCRIPT}
+        echo "cp -r ${TEMP_LP_IO_DIR}/* ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        #echo "cp ${SBATCH_SCRIPT} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        #echo "mv ${NETWORK_CONF} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        #echo "if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]" >> ${SBATCH_SCRIPT}
+        #echo "then" >> ${SBATCH_SCRIPT}
+	#    echo "    mv ${ALLOC_CONF} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+	#    echo "    mv ${ALLOC_CONFIG_PATH} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+	#    echo "    mv ${WRKLD_CONF_FILE} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        #echo "fi" >> ${SBATCH_SCRIPT}
+        #echo "mv ${TEMP_LP_IO_DIR}/stdout-output ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        echo "if [ "$NET_MODEL" == "dfly" ]" >> ${SBATCH_SCRIPT}
+        echo "then" >> ${SBATCH_SCRIPT}
+	    echo "    mv dragonfly* ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        echo "fi" >> ${SBATCH_SCRIPT}
+        #echo "mv ${TEMP_LP_IO_DIR}/execution-variables ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        echo "# Copy output folder to analysis directory" >> ${SBATCH_SCRIPT}
+        echo "if [ ${COPY_ANALYSIS} == 1 ]" >> ${SBATCH_SCRIPT}
+        echo "then" >> ${SBATCH_SCRIPT}
+	    echo "    cp -rf ${LP_IO_DIR} ${ANALYSIS_DIR}" >> ${SBATCH_SCRIPT}
+	    echo "    rm -rf ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+        echo "fi" >> ${SBATCH_SCRIPT}
+        echo "# Delete unused genereated files" >> ${SBATCH_SCRIPT}
+        echo "rm -rf mpi-aggregate*" >> ${SBATCH_SCRIPT}
+        echo "rm -rf mpi-workload*" >> ${SBATCH_SCRIPT}
+        echo "rm -rf ross.csv" >> ${SBATCH_SCRIPT}
+        echo "# Remove temp lp io dir" >> ${SBATCH_SCRIPT}
+        echo "rm -rf ${TEMP_LP_IO_DIR}" >> ${SBATCH_SCRIPT}
+    else
+        mv ${NETWORK_CONF} ${LP_IO_DIR}
+        if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]
+        then
+        mv ${ALLOC_CONF} ${LP_IO_DIR}
+        mv ${ALLOC_CONFIG_PATH} ${LP_IO_DIR}
+        mv ${WRKLD_CONF_FILE} ${LP_IO_DIR}
+        fi
+        mv ${TEMP_LP_IO_DIR}/stdout-output ${LP_IO_DIR}
+        if [ "$NET_MODEL" == "dfly" ]
+        then
+        mv dragonfly* ${LP_IO_DIR}
+        fi
+        # Remove temp lp io dir
+        rm -rf ${TEMP_LP_IO_DIR}
+        # Save all variables to file
+        ( set -o posix ; set ) >> ${LP_IO_DIR}/execution-variables
+        # Copy output folder to analysis directory
+        if [ ${COPY_ANALYSIS} == 1 ]
+        then
+        cp -rf ${LP_IO_DIR} ${ANALYSIS_DIR}
+        rm -rf ${LP_IO_DIR}
+        fi
+        # Delete unused genereated files
+        rm -rf mpi-aggregate*
+        rm -rf mpi-workload*
+        rm -rf ross.csv
     fi
 }
 
