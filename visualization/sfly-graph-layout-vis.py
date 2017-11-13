@@ -15,19 +15,35 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import csv
 
-filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/sfly-3042nodes-minimal-4000end-heterogeneous-trace-cr1k-bkgnd-hf-10mintvl-1000000tintvl-3042ranks-10000mpt-8Bszmsg/'
-numIter = 5000    #Number of iterations for force directed and spring layouts
+numIter = 1000    #Number of iterations for force directed and spring layouts
+
+# Visualization Params
+systemSize = 3042        # Options: 150, 3042
+plotType = "grid"    # Options: grid, spring, circular, force, random, shell
+exportGEXF = 1          # If true, exports the network in the Graph Exchange XML format (GEXF) for reading into Gephi or other application
+w = 20                  # Width of figure
+h = w/2                 # Height of figure
+
 
 # Simulation Params
-k = 36                  # Switch radix
-reps = 180              # Number of model-net reps (from network config file)
-numLevels = 3           # Number of levels/layers of switches in the slim fly
-numPlanes = 1           # Number of planes/rails in sumulation (currently only support one)
-numTerminals = 18       # Number of terminals/modelnet_slimfly's per repetition (from network config file)
-# Plot Params
-plotType = "spring"    # Options: spring, circular, force, random, shell
-w = 80                  # Width of figure
-h = w/2                 # Height of figure
+if systemSize == 150:
+    filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/sfly-150nodes-minimal-4000end-heterogeneous-trace-cr10-bkgnd-hf-10mintvl-1000000tintvl-3042ranks-10000mpt-8Bszmsg/'
+    reps = 50              # Number of model-net reps (from network config file)
+    numRouters = 5         # q value. Number of routers per group and number of groups per subgraph
+    numLocal = 2           # Number of levels/layers of switches in the slim fly
+    numGlobal = 5           # Number of planes/rails in sumulation (currently only support one)
+    numTerminals = 3       # Number of terminals/modelnet_slimfly's per repetition (from network config file)
+    k = numLocal + numGlobal + numTerminals     # Switch radix
+else:
+    filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/sfly-3042nodes-minimal-4000end-heterogeneous-trace-cr1k-bkgnd-hf-10mintvl-1000000tintvl-3042ranks-10000mpt-8Bszmsg/'
+    reps = 338              # Number of model-net reps (from network config file)
+    numRouters = 13         # q value. Number of routers per group and number of groups per subgraph
+    numLocal = 6           # Number of levels/layers of switches in the slim fly
+    numGlobal = 13           # Number of planes/rails in sumulation (currently only support one)
+    numTerminals = 9       # Number of terminals/modelnet_slimfly's per repetition (from network config file)
+    k = numLocal + numGlobal + numTerminals     # Switch radix
+
+totalTerminals = numTerminals * reps
 
 # Input Up Connections file
 f = open(filePath + 'slimfly-config-up-connections', 'rb')
@@ -60,43 +76,36 @@ G=nx.Graph()
 for i in nodes:
     G.add_node(i)
 for i in range(0,len(connections),2):
+    if connections[i]==150:
+        print connections[i+1]
     G.add_edge(connections[i],connections[i+1])
 
-# Compute LP_type IDs
-terminalIds = []
-switchIds = []
-terminalIds =  range(0,numTerminals*reps)
-for i in range(numLevels*numPlanes):
-    switchIds.append(range(numTerminals*reps + i*reps,numTerminals*reps + (i+1)*reps))
-terminalIds = sorted(terminalIds, key=int)
-
 # Compute positions in graph
-if plotType == "layered":
+if plotType == "grid":
     pos = {}
     l = w
-    n = len(terminalIds)
-    dx = float(float(l)/float(n))
+    n = reps   # We have reps-many routers
+    dx = float(float(l)/float(n/2))
+    dy = float(float(w)/float(n/2))
+    #ds = float(n/4)*dx
+    ds = 10
     y = 0
     count = 0
-    for i in range(0,len(terminalIds)):
-        x = float(i)*dx
-        pos[terminalIds[i]] = [x,y]
-        count += 1
-    for j in range(0,numLevels*numPlanes):
-        n = len(switchIds[j])
-        dx = float(float(l)/float(n))
-        if j == 5 or j == 2:
-            dx = dx * 1.5
-        if j<3:
-            y = j + 1
-        else:
-            y = numLevels - j - 1
-        for i in range(0,len(switchIds[j])):
-            x = float(i)*dx
-            pos[switchIds[j][i]] = [x,y]
-        count += 1
+    for s in range(0,2):            # We loop over both subgraphs
+        for i in range(0,numRouters):   # We loop over groups in subgraph s
+            for j in range(0,numRouters):   # We loop over routers in group i
+                x = float(i)*dx + float(s)*ds
+                y = float(j)*dy
+                pos[totalTerminals + s*(reps/2) + i*numRouters + j] = [x,y]
+                count += 1
 
 # Visualize graph
+# Spring Layout
+if plotType == "grid":
+    nx.draw_networkx_nodes(G,pos,node_size=100)
+    nx.draw_networkx_edges(G,pos)
+    #nx.draw(G,pos)
+    nx.draw_networkx_labels(G,pos)
 # Spring Layout
 if plotType == "spring":
     pos=nx.spring_layout(G,iterations=numIter,scale=1)
@@ -119,7 +128,11 @@ if plotType == "shell":
 
 # Clean and Save Figure
 plt.tight_layout()
-fig.savefig('sfly-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
+fig.savefig('sfly'+str(systemSize)+'-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
     edgecolor='w', orientation='portrait', papertype=None,
     format=None, transparent=False, bbox_inches=None, 
     pad_inches=0.25, frameon=None)
+
+# Save graph in GEXF format
+if exportGEXF == 1:
+    nx.write_gexf(G,'sfly'+str(systemSize)+'.gexf')
