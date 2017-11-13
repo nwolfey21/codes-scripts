@@ -27,6 +27,7 @@ numPlanes = 1           # Number of planes/rails in sumulation (currently only s
 numTerminals = 18       # Number of terminals/modelnet_fattree's per repetition (from network config file)
 # Plot Params
 plotType = "layered"    # Options: layered, spring, circular, force, random, shell, graphviz
+exportGEXF = 1          # If true, exports the network in the Graph Exchange XML format (GEXF) for reading into Gephi or other application
 w = 80                  # Width of figure
 h = w/2                 # Height of figure
 
@@ -142,3 +143,7 @@ fig.savefig('fat-tree-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
     edgecolor='w', orientation='portrait', papertype=None,
     format=None, transparent=False, bbox_inches=None, 
     pad_inches=0.25, frameon=None)
+
+# Save graph in GEXF format
+if exportGEXF == 1:
+    nx.write_gexf(G,'sfly'+str(systemSize)+'.gexf')
