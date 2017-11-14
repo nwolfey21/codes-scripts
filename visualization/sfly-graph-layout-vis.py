@@ -23,7 +23,8 @@ plotType = "grid"    # Options: grid, spring, circular, force, random, shell
 exportGEXF = 1          # If true, exports the network in the Graph Exchange XML format (GEXF) for reading into Gephi or other application
 w = 20                  # Width of figure
 h = w/2                 # Height of figure
-
+edgeLocalWeight = 2    # Weight to apply to local connection
+edgeGlobalWeight = 1    # Weight to apply to global connection
 
 # Simulation Params
 if systemSize == 150:
@@ -35,7 +36,7 @@ if systemSize == 150:
     numTerminals = 3       # Number of terminals/modelnet_slimfly's per repetition (from network config file)
     k = numLocal + numGlobal + numTerminals     # Switch radix
 else:
-    filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/sfly-3042nodes-minimal-4000end-heterogeneous-trace-cr1k-bkgnd-hf-10mintvl-1000000tintvl-3042ranks-10000mpt-8Bszmsg/'
+    filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/sfly-3042nodes-minimal-4000end-heterogeneous-trace-cr10-bkgnd-hf-10mintvl-1000000tintvl-3042ranks-10000mpt-8Bszmsg/'
     reps = 338              # Number of model-net reps (from network config file)
     numRouters = 13         # q value. Number of routers per group and number of groups per subgraph
     numLocal = 6           # Number of levels/layers of switches in the slim fly
@@ -46,7 +47,7 @@ else:
 totalTerminals = numTerminals * reps
 
 # Input Up Connections file
-f = open(filePath + 'slimfly-config-up-connections', 'rb')
+f = open(filePath + 'slimfly-config-router-connections', 'rb')
 data = csv.reader(f)
 for row in data:
     up = row
@@ -76,9 +77,29 @@ G=nx.Graph()
 for i in nodes:
     G.add_node(i)
 for i in range(0,len(connections),2):
-    if connections[i]==150:
-        print connections[i+1]
-    G.add_edge(connections[i],connections[i+1])
+    if connections[i]==3042:
+        print str(connections[i])+':'+ str(connections[i+1])
+        count +=1
+    if connections[i+1]==3042:
+        print connections[i]
+        count +=1
+    # Check if connection is local or global to assign appropriate weight
+    difference = connections[i+1] - connections[i]
+    if difference < 0:
+        difference = difference * (-1)
+    weight = edgeLocalWeight
+    if difference > numRouters:
+        weight = edgeGlobalWeight
+    # Check for specific case when global connections are close across subgraphs
+    # When in different subgraphs, the values will be positive and negative
+    subgraph1 = connections[i] - (reps/2)
+    subgraph2 = connections[i+1] -(reps/2)
+    if subgraph1*subgraph2 < 0:
+        weight = edgeGlobalWeight
+    elif subgraph1*subgraph2 == 0 and subgraph1+subgraph2 < 0:
+        weight = edgeGlobalWeight
+    G.add_edge(connections[i],connections[i+1],weight=weight)
+print count
 
 # Compute positions in graph
 if plotType == "grid":
