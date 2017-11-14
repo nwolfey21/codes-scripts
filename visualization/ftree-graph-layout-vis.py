@@ -146,4 +146,4 @@ fig.savefig('fat-tree-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
 
 # Save graph in GEXF format
 if exportGEXF == 1:
-    nx.write_gexf(G,'sfly'+str(systemSize)+'.gexf')
+    nx.write_gexf(G,'ftree.gexf')
