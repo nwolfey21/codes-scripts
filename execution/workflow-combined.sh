@@ -16,9 +16,11 @@
 ###################
 VIS=0               # Whether or not to perform post-process visualization
 SIM=1               # Whether or not to perform a codes model simulation (must be set in addition to TRACE, SYNTHETIC, and/or, BACKGROUND)
-TRACE=1             # Whether or not to do a trace workload
+TRACE=0             # Whether or not to do a trace workload
 SYNTHETIC=0         # Whether or not to do a synthetic workload
 BACKGROUND=1        # Whether or not to do a Neuromorphic background workload
+DEBUG=0             # Runs sequentially in gdb 
+STUDY=chip-scaling  # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, none
 ENABLE_SAMPLING=1   # Sampling Parameters (Only if running TRACE workload or BACKGROUND workload)
 COPY_ANALYSIS=1     # Whether or not to copy output directory to an analysis directory
 ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/   #Only needed if COPY_ANALYSIS=1
@@ -35,7 +37,8 @@ if [ "$EXE_SYS" == "CCI" ]; then
 elif [ "$EXE_SYS" == "server" ]; then
     CODES_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes
     BUILD_DIR=/scratch/codes-nemo/build/build-codes
-    TRACE_DIR=/scratch/networks/dumpi-traces
+    TRACE_DIR=/scratch/networks/dumpi-traces/
+    #TRACE_DIR=/scratch/codes-nemo/dumpi-traces/
 fi
 if [ "$VIS" == 1 ]; then
     PROCESSING_EXE_PATH=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/scripts/modelnet-analysis/parse-sampling.py
@@ -46,19 +49,19 @@ fi
 ##########################
 
 # Network Model
-NET_MODEL=ftree      # Options: ftree, sfly, dfly
-NET_MODEL_SIZE=3k   # Size of HPC system: 3k, 74k, 1m
+NET_MODEL=sfly      # Options: ftree, sfly, dfly
+NET_MODEL_SIZE=3k   # Size of HPC system: 150, 3k, 74k, 1m
 
 # Server Execution Params
-NUM_PROCESSES=16       # Physical MPI processes
-SYNCH=3                # ROSS event scheduling protocol
-EXTRAMEM=800000        # Extra memory to allocate per MPI process
+NUM_PROCESSES=1       # Physical MPI processes
+SYNCH=1                # ROSS event scheduling protocol
+EXTRAMEM=900000        # Extra memory to allocate per MPI process last was 8500000
 BATCH=2                # ROSS batch parameter
-GVT=256                 # ROSS gvt parameter
-MAX_OPT_LOOKAHEAD=1024 # ROSS max opt lookahead parameter
+GVT=128                 # ROSS gvt parameter
+MAX_OPT_LOOKAHEAD=100 # ROSS max opt lookahead parameter
 
 # CCI Execution Params (in addition to Server Execution Params)
-TIME_ALLOC=200       # Requested job allocation time limit
+TIME_ALLOC=350       # Requested job allocation time limit
 NUM_NODES=1        # Requested job number of nodes
 
 # Simulation End Time
@@ -78,9 +81,9 @@ JOBS=("amg1k")      # See below for list of available jobs
 DISABLE_COMPUTE=1   # Whether or not to incorporate DUMPI trace compute times
 
 # Neuromorphic Background Traffic Params
-BACKGROUND_JOB="hf"     # See below for list of available background jobs
+BACKGROUND_JOB="cifar"     # Options: hf, cifar, mnist, none
 MEAN_INTERVAL=10        # Nanosecond delay between spike message injections
-TICK_INTERVAL=1000000   # Nanosecond length of a tick
+TICK_INTERVAL=2000000   # Nanosecond length of a tick
 MSG_SIZE=8              # Size in Bytes of spike messages
 MSGS_PER_TICK=10000     # Number of spike messages to inject per chip per tick. Overwritten in "get_background_wrkld_params()"
 BACKGROUND_RANKS=3456   # Number of neuromorphic chips. Currently overwritten for each net model in "Network Model Params" section below
@@ -91,7 +94,7 @@ ALLOC_POLICY=("heterogeneous")  # Options: CONT,cluster, and rand (supported for
                             # Currently overwritten in execution for loop below
 
 # Common Network Params
-MESSAGE_SIZE=640
+MESSAGE_SIZE=656
 PACKET_SIZE=4096
 CHUNK_SIZE=${PACKET_SIZE}
 MODELNET_SCHEDULER=fcfs
@@ -100,6 +103,8 @@ NUM_INJECTION_QUEUES=1
 NIC_SEQ_DELAY=10
 NODE_COPY_QUEUES=1
 NODE_EAGER_LIMIT=16000
+VC_SIZE_DEFAULT=65536
+LINK_BANDWIDTH_DEFAULT=12.5
 
 # Network Model Specific Params
 get_net_model_params() {
@@ -108,9 +113,13 @@ then
     FTREE_MODEL=ftree10    #Options: ftree (summit approx w/11 pods), ftree10 (ftree with 10 pods)
     ROUTING_ALG=static     #Options: static,adaptive
     NUM_LEVELS=3
-    VC_SIZE=65536
+    VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     CN_VC_SIZE=${VC_SIZE}
-    LINK_BANDWIDTH=12.5
+    if (( $(echo "${LINK_BANDWIDTH_INSTANCE} > 0" | bc -l)  ));then
+        LINK_BANDWIDTH=${LINK_BANDWIDTH_INSTANCE}
+    else
+        LINK_BANDWIDTH=${LINK_BANDWIDTH_DEFAULT}
+    fi
     CN_BANDWIDTH=${LINK_BANDWIDTH}
     if [ "$EXE_SYS" == "CCI" ]
     then
@@ -137,10 +146,14 @@ then
 elif [ "$NET_MODEL" == "sfly" ]
 then
     ROUTING_ALG=minimal     # Options: minimal, nonminimal, adaptive
-    LOCAL_VC_SIZE=65536
+    LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
     CN_VC_SIZE=${LOCAL_VC_SIZE}
-    LOCAL_BANDWIDTH=12.5
+    if (( $(echo "${LINK_BANDWIDTH_INSTANCE} > 0" | bc -l)  ));then
+        LOCAL_BANDWIDTH=${LINK_BANDWIDTH_INSTANCE}
+    else
+        LOCAL_BANDWIDTH=${LINK_BANDWIDTH_DEFAULT}
+    fi
     CN_BANDWIDTH=${LOCAL_BANDWIDTH}
     GLOBAL_BANDWIDTH=${LOCAL_BANDWIDTH}
     BACKGROUND_RANKS=3042
@@ -150,10 +163,14 @@ elif [ "$NET_MODEL" == "dfly" ]
 then
     DFLY_MODEL=theta8       # Options: theta (regular theta), theta8 (8 group theta)
     ROUTING_ALG=adaptive    # Options: minimal, nonminimal, adaptive
-    LOCAL_VC_SIZE=65536
+    LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
     CN_VC_SIZE=${LOCAL_VC_SIZE}
-    LOCAL_BANDWIDTH=12.5
+    if (( $(echo "${LINK_BANDWIDTH_INSTANCE} > 0" | bc -l)  ));then
+        LOCAL_BANDWIDTH=${LINK_BANDWIDTH_INSTANCE}
+    else
+        LOCAL_BANDWIDTH=${LINK_BANDWIDTH_DEFAULT}
+    fi
     CN_BANDWIDTH=${LOCAL_BANDWIDTH}
     GLOBAL_BANDWIDTH=${LOCAL_BANDWIDTH}
     #Theta bandwidths
@@ -187,27 +204,80 @@ fi
 # Leave unused LOOP# variables set to ("1") so they are unused                                   #
 ##################################################################################################
 exec_loop() {
-    LOOP1=("sfly" "dfly" "ftree")
-    LOOP2=("amg1k" "mg1k" "cr1k")
-    #LOOP1=("sfly")
-    #LOOP2=("amg1k")
-    LOOP3=("1")
+    LOOP1=("sfly" "dfly")
+    LOOP2=("cr1k")
     TOTAL_SIMS=$(( ${#LOOP1[@]} * ${#LOOP2[@]} * ${#LOOP3[@]} ))
     COUNT_SIMS=1
     for L1 in ${LOOP1[@]};do
         NET_MODEL=${L1}  # Set variable dependent on loop
         for L2 in ${LOOP2[@]};do
             JOBS=${L2}  # Set variable dependent on loop
+            # Check if running a specific study
+            if [ "${STUDY}" == "spike-scaling" ];then
+                LOOP3=("2500" "5000" "10000" "20000" "40000" "80000")
+                #LOOP3=("2500" "5000" "20000" "40000")
+            elif [ "${STUDY}" == "chip-scaling" ];then
+                if [ "${L1}" == "sfly" ];then
+                    LOOP3=("761" "1521" "3042" "6084" "12168")
+                    LOOP3=("3042")
+                elif [ "${L1}" == "dfly" ];then
+                    LOOP3=("768" "1536" "3072" "6144" "12288")
+                else
+                    LOOP3=("810" "1620" "3240" "6480" "12960")
+                    #LOOP3=("12960")
+                fi
+                if [ "$BACKGROUND_JOB" == "mnist" ];then
+                    LOOP3=("155" "309" "617" "1234" "2467")
+                elif [ "$BACKGROUND_JOB" == "cifar" ]; then
+                    LOOP3=("128" "256" "512" "1024" "2048")
+                    LOOP3=("128")
+                fi
+            elif [ "${STUDY}" == "buffer-scaling" ];then
+                #if [ "${L1}" == "sfly" ];then
+                #    #LOOP3=("8192" "16384" "32768" "65536" "131072" "262144" "524288" "1048576")
+                #    LOOP3=("8192")
+                #elif [ "${L1}" == "ftree" ];then
+                #    #LOOP3=("8192" "16384" "32768" "65536" "131072" "262144" "524288" "1048576")
+                #    LOOP3=("8192")
+                #elif [ "${L1}" == "dfly" ];then
+                #    LOOP3=("8192" "16384")
+                #fi
+                LOOP3=("32768" "65536" "131072" "262144" "524288" "1048576")
+            elif [ "${STUDY}" == "link-scaling" ];then
+                LOOP3=("5" "7" "12.5" "25")
+            elif [ "${STUDY}" == "none" ];then
+                LOOP3=("1")
+            fi
             for L3 in ${LOOP3[@]};do
-                LOOP_METRIC3=${L3}  # Set variable dependent on loop
-
+                VC_SIZE_INSTANCE=${VC_SIZE_DEFAULT}
+                LINK_BANDWIDTH_INSTANCE=${LINK_BANDWIDTH_DEFAULT}
+                if [ "${STUDY}" == "buffer-scaling" ];then
+                    VC_SIZE_INSTANCE=${L3}
+                fi
+                if [ "${STUDY}" == "link-scaling" ];then
+                    LINK_BANDWIDTH_INSTANCE=${L3}
+                fi
                 # Set network model specific params
                 get_net_model_params
+                get_background_wrkld_params # Overwrites background params specific to each neuro workload. Some are further overwritten if doing a scaling study
+                # Set study specific params
+                if [ "${STUDY}" == "chip-scaling" ];then
+                    BACKGROUND_RANKS=${L3}  # Set variable dependent on loop
+                    if [ "$BACKGROUND_JOB" == "mnist" ];then
+                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-${L3}chips.csv
+                    elif [ "$BACKGROUND_JOB" == "cifar" ]; then
+                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-${L3}chips.csv
+                    fi
+                elif [ "${STUDY}" == "spike-scaling" ];then
+                    MSGS_PER_TICK=${L3}
+                else
+                    BACKGROUND=("1")
+                fi
                 echo LOCAL_VC_SIZE: ${LOCAL_VC_SIZE}
 
                 # Set trace params
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
-
+                SIM_END_TIME=2000000
                 # Setting Trace Sampling metrics
                 echo sim end time: ${SIM_END_TIME} sample points: ${SAMPLING_POINTS}
                 SAMPLING_INTERVAL=$(( ${SIM_END_TIME} / ${SAMPLING_POINTS} ))
@@ -217,6 +287,18 @@ exec_loop() {
                 COUNT_SIMS=$(( ${COUNT_SIMS} +1 ))
                 # Network model-net group conf params
                 echo "Setting model-net conf params"
+                if [ "$NET_MODEL_SIZE" == "150" ]
+                then
+                    if [ "$NET_MODEL" == "sfly" ]
+                    then
+                        REPS=50
+                        NUM_ROUTERS=5
+                        LOCAL_CHANNELS=2
+                        GENERATOR_SET_X='("1","4");'        #   : Subgraph 0 generator set
+                        GENERATOR_SET_X_PRIME='("2","3");'   #   : Subgraph 1 generator set
+                        MODELNET_SLIMFLY=3
+                    fi
+                fi
                 if [ "$NET_MODEL_SIZE" == "3k" ]
                 then
                     echo sys 3k
@@ -294,6 +376,13 @@ exec_loop() {
                     TOTAL_NODES=$(( ${MODELNET_DRAGONFLY_CUSTOM} * ${REPS} ))
                 fi
 
+                # Check if need to change heterogeneous alloc policy for single job run
+                if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
+                    if [ ${TRACE} == 0 ] || [ ${BACKGROUND} == 0 ];then
+                        ALLOC_POLICY=("CONT")
+                    fi
+                fi
+
                 # Calculate number of nw_lps per repetition based on total number of ranks and total nodes
                 TOTAL_RANKS=0
                 if [ ${TRACE} == 1 ];then
@@ -304,13 +393,25 @@ exec_loop() {
                 fi
                 if [ "$NET_MODEL" == "ftree" ]
                 then
-                    NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 18 ))
+                    if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
+                        NW_LP=$(( 2 * 18 ))
+                    else
+                        NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 18 ))
+                    fi
                 elif [ "$NET_MODEL" == "sfly" ]
                 then
-                    NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 9 ))
+                    if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
+                        NW_LP=$(( 2 * 9 ))
+                    else
+                        NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 9 ))
+                    fi
                 elif [ "$NET_MODEL" == "dfly" ]
                 then
-                    NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 4 ))
+                    if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
+                        NW_LP=$(( 2 * 4 ))
+                    else
+                        NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 4 ))
+                    fi
                 fi
 
                 # Calculate number of mpi ranks per node for mapping jobs
@@ -329,15 +430,11 @@ exec_loop() {
                 if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]
                 then
                     EXE_PATH=${BUILD_DIR}/src/network-workloads/model-net-mpi-replay
+                    if [ ${DEBUG} == 1 ];then
+                        EXE_PATH=${BUILD_DIR}/src/network-workloads/.libs/model-net-mpi-replay
+                    fi
                 else
                     EXE_PATH=${BUILD_DIR}/src/network-workloads/model-net-synthetic-slimfly
-                fi
-
-                # Check if need to change heterogeneous alloc policy for single job run
-                if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
-                    if [ ${TRACE} == 0 ] || [ ${BACKGROUND} == 0 ];then
-                        ALLOC_POLICY=("CONT")
-                    fi
                 fi
 
                 # Create LP_IO Directory Name
@@ -378,6 +475,7 @@ exec_loop() {
                             echo -n " --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL}" >> ${SBATCH_SCRIPT}
                             echo -n " --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME}" >> ${SBATCH_SCRIPT}
                             echo -n " --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL}" >> ${SBATCH_SCRIPT}
+                            echo -n " --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE}" >> ${SBATCH_SCRIPT}
                             echo " -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output " >> ${SBATCH_SCRIPT}
                             echo "# Save all variables to file" >> ${SBATCH_SCRIPT}
                             ( set -o posix ; set ) >> ${TEMP_LP_IO_DIR}/execution-variables
@@ -387,19 +485,37 @@ exec_loop() {
                             sbatch --time=${TIME_ALLOC} --nodes=${NUM_NODES} --mail-type=END --mail-user=nwolfey21@gmail.com ${SBATCH_SCRIPT}
                             echo "Submitted Sbatch job ${LP_IO_DIR}" 
                         else
-                            mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
-                                --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
-                                --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
-                                --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
-                                --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} \
-                                -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                            if [ ${DEBUG} == 1 ] && [ ${SYNCH} == 1 ];then
+                                gdb --args ${EXE_PATH} --synch=1 --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                    --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                                    --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                                    --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                                    --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                            elif [ ${DEBUG} == 1 ] && [ ${SYNCH} == 3 ];then
+                                mpirun -n ${NUM_PROCESSES} xterm -e gdb --args ${EXE_PATH} --synch=1 --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                    --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                                    --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                                    --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                                    --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                            else
+                                mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                    --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                                    --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                                    --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                                    --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                            fi
                             echo mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
                                 --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
                                 --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                 --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                 --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} \
+                                --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
                                 -- ${NETWORK_CONF}
                             # Copy config files to the LP-IO-DIR
                             move_config_files
@@ -492,6 +608,34 @@ get_trace_params() {
     then
         TRACE_PREFIXES=("${TRACE_DIR}/UM/nemo6084/dumpi--17.10.07.23.16.18-processed-n2d-")
         RANKS_PER_JOB=("6084")
+    elif [ "$JOBS" == "conv32" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/complete32/dumpi--17.11.19.20.17.45-processed-n2d-")
+        RANKS_PER_JOB=("32")
+    elif [ "$JOBS" == "conv4096" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/complete4096/dumpi--17.11.19.20.17.45-processed-n2d-")
+        RANKS_PER_JOB=("4096")
+    elif [ "$JOBS" == "mnist_2" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/mnist/2chip/dumpi--17.12.02.19.19.12-processed-n2d-")
+        RANKS_PER_JOB=("2")
+    elif [ "$JOBS" == "mnist_256" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/mnist/2chip/dumpi--17.12.02.-processed-n2d-")
+        RANKS_PER_JOB=("144")
+    elif [ "$JOBS" == "cifar_100_2" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/CIFAR_100/2chip/dumpi--17.12.04.13.29.15-processed-n2d-")
+        RANKS_PER_JOB=("2")
+    elif [ "$JOBS" == "cifar_100_16" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/CIFAR_100/16_core/dumpi--17.12.01.08.30.36-processed-n2d-")
+        RANKS_PER_JOB=("16")
+    elif [ "$JOBS" == "cifar_100_4096" ]
+    then
+        TRACE_PREFIXES=("${TRACE_DIR}/CONV/CIFAR_100/4096_core/dumpi--17.12.01.08.44.46-processed-n2d-")
+        RANKS_PER_JOB=("4042")
     fi
 }
 
@@ -499,17 +643,29 @@ get_background_wrkld_params(){
     echo "Selecting Background Workload/s"
     if [ "${BACKGROUND_JOB}" == "hf" ];then
         MSGS_PER_TICK=10000
-    elif [ "$BACKGROUND_JOB" == "ff" ];then
-        MSGS_PER_TICK=10000
+        CHIP_CONNECTIONS=0
+    elif [ "$BACKGROUND_JOB" == "cifar" ];then
+        MSGS_PER_TICK=0
+        CHIP_CONNECTIONS=1
+        BACKGROUND_RANKS=1024
+        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-1024chips.csv
+    elif [ "$BACKGROUND_JOB" == "mnist" ];then
+        MSGS_PER_TICK=0
+        CHIP_CONNECTIONS=1
+        BACKGROUND_RANKS=1234
+        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-1234chips.csv
+    elif [ "$BACKGROUND_JOB" == "none" ];then
+        MSGS_PER_TICK=0
+        CHIP_CONNECTIONS=0
     fi
 
 }
 
 create_lp_io_dir_name() {
     if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]; then
-        TEMP_DIR2=${NET_MODEL}-${TOTAL_NODES}nodes-${ROUTING_ALG}-${SIM_END_TIME}end-${ALLOC_POLICY}-
+        TEMP_DIR2=${NET_MODEL}-${TOTAL_NODES}nodes-${ROUTING_ALG}-${SIM_END_TIME}end-${VC_SIZE_INSTANCE}vc-${LINK_BANDWIDTH_INSTANCE}GBps-${ALLOC_POLICY}-
     else
-        TEMP_DIR2=${NET_MODEL}-${TOTAL_NODES}nodes-${ROUTING_ALG}-${SIM_END_TIME}end-
+        TEMP_DIR2=${NET_MODEL}-${TOTAL_NODES}nodes-${ROUTING_ALG}-${SIM_END_TIME}end-${VC_SIZE_INSTANCE}vc-${LINK_BANDWIDTH_INSTANCE}GBps-
     fi
     if [ ${TRACE} == 1 ]
     then
@@ -769,10 +925,18 @@ create_alloc_conf() {
         elif [ "${ALLOC_POLICY}" == "heterogeneous" ]   # Currently only supports one trace job
         then
             echo Heterogeneous allocation...
+            echo ${NW_LP}
             rm -rf ${ALLOC_CONF}
-            for i in `seq 0 2 $(( ${RANKS_PER_JOB[0]} * 2 -1))`
+            for i in `seq 0 1 $(( ${REPS} -1))`
             do
-                echo -n "$i " >> ${ALLOC_CONF}
+                for j in `seq 0 1 $(( ${NW_LP} / 2 - 1 ))`
+                do
+                    result=$(( $i*${NW_LP}/2 + $j ))
+                    if [ "${result}" -lt "$((${RANKS_PER_JOB[0]}))" ];then
+                        temp=$(( $j + $i * ${NW_LP} ))
+                        echo -n "${temp} " >> ${ALLOC_CONF}
+                    fi
+                done
             done
         fi
         # Generate Dumpi Workload Config File
@@ -806,9 +970,16 @@ create_alloc_conf() {
             then
                 echo -n -e "\n" >> ${ALLOC_CONF}
             fi
-            for i in `seq 1 2 $(( ${BACKGROUND_RANKS} * 2 -1))`
+            for i in `seq 0 1 $(( ${REPS} -1))`
             do
-                echo -n "$i " >> ${ALLOC_CONF}
+                for j in `seq 0 1 $(( ${NW_LP} / 2 - 1 ))`
+                do
+                    result=$(( $i*${NW_LP}/2 + $j ))
+                    if [ "${result}" -lt "$((${BACKGROUND_RANKS}))" ];then
+                        temp=$(( ${NW_LP}/2 + $j + $i * ${NW_LP} ))
+                        echo -n "${temp} " >> ${ALLOC_CONF}
+                    fi
+                done
             done
         fi
     fi
@@ -822,8 +993,8 @@ create_alloc_conf() {
 move_config_files() {
     # Move Simulation config files to lp-io-dir
     echo "Moving Simulation config files to lp-io-dir"
+    echo "" >> ${SBATCH_SCRIPT}
     if [ "${EXE_SYS}" == "CCI" ];then
-        echo "" >> ${SBATCH_SCRIPT}
         echo "cp -r ${TEMP_LP_IO_DIR}/* ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
         #echo "cp ${SBATCH_SCRIPT} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
         #echo "mv ${NETWORK_CONF} ${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
