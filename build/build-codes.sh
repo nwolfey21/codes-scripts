@@ -196,7 +196,7 @@ if [ ${CODES} == 1 ];then
         CODES_ARGS=
     fi
     echo -e ${BLUE}PROGRESS: ${LIGHTBLUE}configuring CODES${NC}
-    ${CODES_DIR}/configure ${CODES_ARGS} CC=mpicc CXX=mpicxx PKG_CONFIG_PATH=${ROSS_INSTALL_DIR}/lib/pkgconfig --prefix=${CODES_INSTALL_DIR}
+    ${CODES_DIR}/configure ${CODES_ARGS} CC=mpicc CXX=mpicxx CFLAGS="-g" CXXFLAGS="-g" PKG_CONFIG_PATH=${ROSS_INSTALL_DIR}/lib/pkgconfig --prefix=${CODES_INSTALL_DIR}
     if [ $? -ne 0 ];then
         echo -e ${RED}ERROR: ${LIGHTRED}failed configuring CODES${NC}
     OUTPUT_TEXT+=("${RED}ERROR: ${LIGHTRED}failed configuring CODES${NC}")
