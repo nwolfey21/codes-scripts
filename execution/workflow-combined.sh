@@ -16,11 +16,11 @@
 ###################
 VIS=0               # Whether or not to perform post-process visualization
 SIM=1               # Whether or not to perform a codes model simulation (must be set in addition to TRACE, SYNTHETIC, and/or, BACKGROUND)
-TRACE=0             # Whether or not to do a trace workload
+TRACE=1             # Whether or not to do a trace workload
 SYNTHETIC=0         # Whether or not to do a synthetic workload
-BACKGROUND=1        # Whether or not to do a Neuromorphic background workload
+BACKGROUND=0        # Whether or not to do a Neuromorphic background workload
 DEBUG=0             # Runs sequentially in gdb 
-STUDY=chip-scaling  # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, none
+STUDY=vis-sampling  # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, spike-aggregation, aggregation-scaling, vis-sampling, none
 ENABLE_SAMPLING=1   # Sampling Parameters (Only if running TRACE workload or BACKGROUND workload)
 COPY_ANALYSIS=1     # Whether or not to copy output directory to an analysis directory
 ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/   #Only needed if COPY_ANALYSIS=1
@@ -55,7 +55,7 @@ NET_MODEL_SIZE=3k   # Size of HPC system: 150, 3k, 74k, 1m
 # Server Execution Params
 NUM_PROCESSES=1       # Physical MPI processes
 SYNCH=1                # ROSS event scheduling protocol
-EXTRAMEM=900000        # Extra memory to allocate per MPI process last was 8500000
+EXTRAMEM=9000000        # Extra memory to allocate per MPI process last was 8500000
 BATCH=2                # ROSS batch parameter
 GVT=128                 # ROSS gvt parameter
 MAX_OPT_LOOKAHEAD=100 # ROSS max opt lookahead parameter
@@ -81,12 +81,14 @@ JOBS=("amg1k")      # See below for list of available jobs
 DISABLE_COMPUTE=1   # Whether or not to incorporate DUMPI trace compute times
 
 # Neuromorphic Background Traffic Params
-BACKGROUND_JOB="cifar"     # Options: hf, cifar, mnist, none
+BACKGROUND_JOB="mnist"     # Options: hf, cifar, mnist, none
 MEAN_INTERVAL=10        # Nanosecond delay between spike message injections
-TICK_INTERVAL=2000000   # Nanosecond length of a tick
-MSG_SIZE=8              # Size in Bytes of spike messages
-MSGS_PER_TICK=10000     # Number of spike messages to inject per chip per tick. Overwritten in "get_background_wrkld_params()"
+TICK_INTERVAL=28000000   # Nanosecond length of a tick
+SPIKE_SIZE=8              # Size in Bytes of spike messages. Used 200 for dfly data collection amg/mnist
+SPIKES_PER_TICK=10000     # Number of spike messages to inject per chip per tick. Overwritten in "get_background_wrkld_params()"
 BACKGROUND_RANKS=3456   # Number of neuromorphic chips. Currently overwritten for each net model in "Network Model Params" section below
+AGGREGATION_OVERHEAD=0  # Nanosecond delay per spike required to aggregate into one message per chip connection
+SPIKE_AGGREGATION_FLAG=0 # 0: Don't perform spike aggregation. 1: Do perform spike aggregation
 
 # Allocation Protocol (Trace workload only)
 ALLOC_POLICY=("heterogeneous")  # Options: CONT,cluster, and rand (supported for one or more trace/background/combined jobs)
@@ -145,6 +147,7 @@ then
     #BACKGROUND_RANKS_BATCH=("3564")
 elif [ "$NET_MODEL" == "sfly" ]
 then
+    SF_TYPE=1   #Options: 0->single rail slim fly, 1->dual-rail slim fly (fit fly)
     ROUTING_ALG=minimal     # Options: minimal, nonminimal, adaptive
     LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
@@ -204,14 +207,15 @@ fi
 # Leave unused LOOP# variables set to ("1") so they are unused                                   #
 ##################################################################################################
 exec_loop() {
-    LOOP1=("sfly" "dfly")
-    LOOP2=("cr1k")
+    LOOP1=("sfly")
+    LOOP2=("none")
     TOTAL_SIMS=$(( ${#LOOP1[@]} * ${#LOOP2[@]} * ${#LOOP3[@]} ))
     COUNT_SIMS=1
     for L1 in ${LOOP1[@]};do
         NET_MODEL=${L1}  # Set variable dependent on loop
         for L2 in ${LOOP2[@]};do
-            JOBS=${L2}  # Set variable dependent on loop
+            #JOBS=${L2}  # Set variable dependent on loop
+            BACKGROUND_JOB=${L2}
             # Check if running a specific study
             if [ "${STUDY}" == "spike-scaling" ];then
                 LOOP3=("2500" "5000" "10000" "20000" "40000" "80000")
@@ -245,6 +249,14 @@ exec_loop() {
                 LOOP3=("32768" "65536" "131072" "262144" "524288" "1048576")
             elif [ "${STUDY}" == "link-scaling" ];then
                 LOOP3=("5" "7" "12.5" "25")
+            elif [ "${STUDY}" == "aggregation-scaling" ];then
+                LOOP3=("10" "50" "100" "250" "500")
+                SPIKE_AGGREGATION_FLAG=1
+            elif [ "${STUDY}" == "spike-aggregation" ];then
+                LOOP3=("10")
+                SPIKE_AGGREGATION_FLAG=1
+            elif [ "${STUDY}" == "vis-sampling" ];then
+                LOOP3=("1")
             elif [ "${STUDY}" == "none" ];then
                 LOOP3=("1")
             fi
@@ -269,15 +281,19 @@ exec_loop() {
                         CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-${L3}chips.csv
                     fi
                 elif [ "${STUDY}" == "spike-scaling" ];then
-                    MSGS_PER_TICK=${L3}
+                    SPIKES_PER_TICK=${L3}
+                elif [ "${STUDY}" == "aggregation-scaling" ];then
+                    AGGREGATION_OVERHEAD=${L3}
+                elif [ "${STUDY}" == "spike-aggregation" ];then
+                    AGGREGATION_OVERHEAD=${L3}
                 else
-                    BACKGROUND=("1")
+                    BACKGROUND=${BACKGROUND}
                 fi
                 echo LOCAL_VC_SIZE: ${LOCAL_VC_SIZE}
 
                 # Set trace params
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
-                SIM_END_TIME=2000000
+                SIM_END_TIME=500
                 # Setting Trace Sampling metrics
                 echo sim end time: ${SIM_END_TIME} sample points: ${SAMPLING_POINTS}
                 SAMPLING_INTERVAL=$(( ${SIM_END_TIME} / ${SAMPLING_POINTS} ))
@@ -355,6 +371,10 @@ exec_loop() {
                     NUM_VCS=4
                     LINK_DELAY=0
                     CSF_RATIO=1
+                    if [ ${SF_TYPE} == 1 ];then
+                        SLIMFLY_ROUTER=2
+                        NUM_RAILS=2
+                    fi
                 elif [ "$NET_MODEL" == "dfly" ]
                 then
                     NUM_ROUTER_ROWS=6
@@ -457,6 +477,14 @@ exec_loop() {
                     WRKLD_TYPE=dumpi
                     echo Executing Simultion...
                     rm -rf ${LP_IO_DIR}
+                    echo mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                        --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                        --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                        --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                        --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                        --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                        --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD} \
+                        -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
                     if [ ${TRACE} == 1 ] || [ ${BACKGROUND} == 1 ]
                     then
                         ADDL_ARGS=""
@@ -474,8 +502,9 @@ exec_loop() {
                             echo -n " --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR}" >> ${SBATCH_SCRIPT}
                             echo -n " --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL}" >> ${SBATCH_SCRIPT}
                             echo -n " --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME}" >> ${SBATCH_SCRIPT}
-                            echo -n " --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL}" >> ${SBATCH_SCRIPT}
+                            echo -n " --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL}" >> ${SBATCH_SCRIPT}
                             echo -n " --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE}" >> ${SBATCH_SCRIPT}
+                            echo -n " --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD}" >> ${SBATCH_SCRIPT}
                             echo " -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output " >> ${SBATCH_SCRIPT}
                             echo "# Save all variables to file" >> ${SBATCH_SCRIPT}
                             ( set -o posix ; set ) >> ${TEMP_LP_IO_DIR}/execution-variables
@@ -491,7 +520,8 @@ exec_loop() {
                                     --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                     --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                     --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD} \
                                     -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
                             elif [ ${DEBUG} == 1 ] && [ ${SYNCH} == 3 ];then
                                 mpirun -n ${NUM_PROCESSES} xterm -e gdb --args ${EXE_PATH} --synch=1 --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
@@ -499,23 +529,37 @@ exec_loop() {
                                     --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                     --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                     --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                    --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD} \
                                     -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
                             else
-                                mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
-                                    --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
-                                    --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
-                                    --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
-                                    --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                    --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
-                                    -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                                if [ "${STUDY}" == "vis-sampling" ];then
+                                    mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                        --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                                        --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                                        --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                                        --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                        --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                        --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD} \
+                                        --analysis-lps=4 --vt-interval=12000 --vt-samp-end=${SIM_END_TIME} \
+                                        -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                                else
+                                    mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                        --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
+                                        --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
+                                        --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
+                                        --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
+                                        --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                        --spike_aggregation_flag=${SPIKE_AGGREGATION_FLAG} --aggregation_overhead=${AGGREGATION_OVERHEAD} \
+                                        -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
+                                fi
                             fi
                             echo mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} \
                                 --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
                                 --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                 --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
                                 --sampling_end_time=${SAMPLING_END_TIME} --disable_compute=${DISABLE_COMPUTE} --extramem=${EXTRAMEM} ${ADDL_ARGS} --end=${SIM_END_TIME} \
-                                --msgs_per_tick=${MSGS_PER_TICK} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
+                                --spikes_per_tick=${SPIKES_PER_TICK} --spike_size=${SPIKE_SIZE} --tick_interval=${TICK_INTERVAL} --chip_connections=${CHIP_CONNECTIONS} --chip_file=${CHIP_FILE} \
                                 -- ${NETWORK_CONF}
                             # Copy config files to the LP-IO-DIR
                             move_config_files
@@ -642,20 +686,20 @@ get_trace_params() {
 get_background_wrkld_params(){
     echo "Selecting Background Workload/s"
     if [ "${BACKGROUND_JOB}" == "hf" ];then
-        MSGS_PER_TICK=10000
+        SPIKES_PER_TICK=10000
         CHIP_CONNECTIONS=0
     elif [ "$BACKGROUND_JOB" == "cifar" ];then
-        MSGS_PER_TICK=0
+        SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=1
         BACKGROUND_RANKS=1024
         CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-1024chips.csv
     elif [ "$BACKGROUND_JOB" == "mnist" ];then
-        MSGS_PER_TICK=0
+        SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=1
         BACKGROUND_RANKS=1234
         CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-1234chips.csv
     elif [ "$BACKGROUND_JOB" == "none" ];then
-        MSGS_PER_TICK=0
+        SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=0
     fi
 
@@ -686,7 +730,7 @@ create_lp_io_dir_name() {
         if [ ${TRACE} == 1 ];then
             TEMP_DIR2+=-
         fi
-        TEMP_DIR2+=bkgnd-${BACKGROUND_JOB}-${MEAN_INTERVAL}mintvl-${TICK_INTERVAL}tintvl-${BACKGROUND_RANKS}ranks-${MSGS_PER_TICK}mpt-${MSG_SIZE}Bszmsg
+        TEMP_DIR2+=bkgnd-${BACKGROUND_JOB}-${MEAN_INTERVAL}mintvl-${TICK_INTERVAL}tintvl-${BACKGROUND_RANKS}ranks-${SPIKES_PER_TICK}mpt-${SPIKE_SIZE}Bszmsg-${AGGREGATION_OVERHEAD}agg
     fi
     if [ ${SYNTHETIC} == 1 ]
     then
@@ -720,6 +764,8 @@ create_net_conf() {
         echo "}" >> ${NETWORK_CONF}
         echo "PARAMS" >> ${NETWORK_CONF}
         echo "{" >> ${NETWORK_CONF}
+        echo "    sf_type=\"${SF_TYPE}\";" >> ${NETWORK_CONF}
+        echo "    num_rails=\"${NUM_RAILS}\";" >> ${NETWORK_CONF}
         echo "    packet_size=\"${PACKET_SIZE}\";" >> ${NETWORK_CONF}
         echo "    message_size=\"${MESSAGE_SIZE}\";" >> ${NETWORK_CONF}
         echo "    chunk_size=\"${CHUNK_SIZE}\";" >> ${NETWORK_CONF}
@@ -938,6 +984,11 @@ create_alloc_conf() {
                     fi
                 done
             done
+            #rm -rf ${ALLOC_CONF}
+            #for i in `seq 0 2 $(( ${RANKS_PER_JOB[0]}*2 -1))`
+            #do
+            #    echo -n "${i} " >> ${ALLOC_CONF}
+            #done
         fi
         # Generate Dumpi Workload Config File
         echo Generating Dumpi Workload Config File...
@@ -981,6 +1032,10 @@ create_alloc_conf() {
                     fi
                 done
             done
+            #for i in `seq 1 2 $(( ${BACKGROUND_RANKS}*2 -1))`
+            #do
+            #    echo -n "${i} " >> ${ALLOC_CONF}
+            #done
         fi
     fi
     # Add Background params to workload config file
