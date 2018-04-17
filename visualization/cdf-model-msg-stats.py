@@ -10,14 +10,16 @@ import collections
 import numpy as np
 import argparse
 import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib import mlab
+from matplotlib import mlab, colors
+import pdb
 
 # Parse commandline arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--lp-io-dir', action='store', dest='lpIoDir', nargs='+', type=str,
                     help='space separated list of paths to the directories containing all modelnet sim data for each execution')
-parser.add_argument('--sim-labels', action='store', dest='simLabels', nargs='+', type=str,
+parser.add_argument('--sim-labels', action='store', default=0, dest='simLabels', nargs='+', type=str,
                     help='space separated list of labels for each simulation')
 parser.add_argument('--num-bins', action='store', default=-1, dest='nbins',
                     help='Number of bins for CDF histogram')
@@ -35,8 +37,22 @@ parser.add_argument('--switch-radix', action='store', dest='portsPerSwitch', nar
                     help='space separated list of switch radix count for each execution to visualize')
 parser.add_argument('--annotate-figure', action='store_true', default=False, dest='annoFlag',
                     help='If selected, annotates the generated figure data')
-parser.add_argument('--axis-limits', action='store_true', default=True, dest='axisLimits',
+parser.add_argument('--axis-limits', action='store_true', default=False, dest='axisLimits',
                     help='If selected, constrains the limits of the figure axis')
+parser.add_argument('--log', action='store_true', default=False, dest='logScale',
+                    help='If selected, sets x-axis to log scale')
+parser.add_argument('--out-file-postfix', action='store', dest='postfix', nargs='+', type=str, default="",
+                    help='String to concatenate to the end of the output filename')
+parser.add_argument('--plot-type', action='store', dest='plotType', nargs='+', type=str, default="line",
+                    help='String indicating the plot layout')
+parser.add_argument('--output-dir', action='store', dest='outputDir', nargs='+', type=str, default="",
+                    help='String indicating the desired path to put generated figures')
+parser.add_argument('--fig-height', action='store', default=5, dest='figHeight', type=float,
+                    help='Height of the generated figure')
+parser.add_argument('--fig-width', action='store', default=5, dest='figWidth', type=float,
+                    help='Width of the generated figure')
+parser.add_argument('--fig-font-size', action='store', default=8, dest='fontSize', type=float,
+                    help='size of text in the generated figure')
 
 results = parser.parse_args()
 print 'lp io dir          =', results.lpIoDir
@@ -50,6 +66,13 @@ print 'num-noeds          =', results.numNodes
 print 'ports per switch   =', results.portsPerSwitch
 print 'annotate figure    =', results.annoFlag
 print 'axis limits        =', results.axisLimits
+print 'log scale          =', results.logScale
+print 'out-file-postfix   =', results.postfix
+print 'plot layout        =', results.plotType
+print 'output dir         =', results.outputDir
+print 'fig height         =', results.figHeight
+print 'fig width          =', results.figWidth
+print 'font size          =', results.fontSize
 lpIoDir = results.lpIoDir
 simLabels = results.simLabels
 nBins = int(results.nbins)
@@ -61,17 +84,35 @@ nodes = results.numNodes
 portsPerSwitch = results.portsPerSwitch
 annotateFigure = results.annoFlag
 axisLimits = results.axisLimits
+logScale = results.logScale
+postfix = results.postfix
+plotType = results.plotType[0]
+outputDir = results.outputDir
+figHeight = results.figHeight
+figWidth = results.figWidth
+fontSize = results.fontSize
 
-matplotlib.rcParams.update({'font.size': 12})
+matplotlib.rcParams.update({'font.size': fontSize})
 
 #Width of the lines for plotting
 lwidth = 2.0
+markerSize = 3.0
+markerFrequency = 0.1
+
+lineColor = ['red','limegreen','blue','darkred','darkgreen','darkblue','salmon','lightgreen','lightskyblue']
+lineColor = ['salmon','red','darkred','lightgreen','limegreen','darkgreen','lightskyblue','blue','darkblue']
+markers = ['X','x','P','+','o','s','*','p','v']
+lineStyle = ['-','-','--','-','-','--','-','-','--']
+
+maxValue = 0
+
+heatmapData = []
 
 for met in metric:
     #init/clean reused variables
     xlabel = []
     #Create figure for visualization
-    fig, ax = plt.subplots(figsize=(5.2, 4))
+    fig, ax = plt.subplots(figsize=(figWidth, figHeight))
 
     for sim in range(len(modelType)):
         if modelType[sim] == 0:
@@ -114,7 +155,7 @@ for met in metric:
         #    replayDataTemp.append(temp)
         #inFile.close()
 
-        # Extract fattree-msg-stats file header
+        # Extract model-msg-stats file header
         if mType == "dragonfly":
             inFile = open(lpIoDir[sim]+'/'+mType+'-msg-stats.meta', 'r')
         else:
@@ -125,18 +166,20 @@ for met in metric:
         temp = temp.replace(' <','')
         temp = temp.replace('>',',')
         temp = temp.replace('Total Data Size','Data Per Terminal [bytes]')
-        temp = temp.replace('Total Packet Latency','Avg Packet Latency [ns]')
+        temp = temp.replace('Total Packet Latency','Aggregate Packet Latency [ns]')
         temp = temp.replace('# Flits/','')
         temp = temp.replace('hops','Hops')
         temp = temp.replace('Busy Time','Terminal Busy Time [us]')
         temp = temp.replace('End Time','End Time [ms]')
-        msgHeader= temp.split(",")
+        temp = temp.replace('Packets Generated', 'Packets Generated [1e3]')
+        temp = temp.replace('Packets finished', 'Packets Finished [1e3]')
+        msgHeader = temp.split(",")
         del msgHeader[-1]
         if mType == "dragonfly":
             inFile.close()
             inFile = open(lpIoDir[sim]+'/dragonfly-msg-stats', 'r')
 
-        # Parse fattree-msg-stats data
+        # Parse model-msg-stats data
         print 'Parsing '+hwName+'-msg-stats data...'
         msgDataTemp = []
         while True:
@@ -151,7 +194,37 @@ for met in metric:
                 msgDataTemp.append(temp)
         inFile.close()
 
-        # Extract fattree-switch-stats file header
+        # Extract mpi-replay-stats file header
+        inFile = open(lpIoDir[sim]+'/mpi-replay-stats', 'r')
+        line = inFile.readline()
+        line = line.strip()
+        temp = line.replace('# Format','')
+        temp = temp.replace(' <','')
+        temp = temp.replace('>',',')
+        temp = temp.replace('Total sends', 'Total Sends')
+        temp = temp.replace('Bytes sent', 'Bytes Sent')
+        msgHeaderReplay = temp.split(",")
+        del msgHeaderReplay[-1]
+        if mType == "dragonfly":
+            inFile.close()
+            inFile = open(lpIoDir[sim]+'/dragonfly-msg-stats', 'r')
+
+        # Parse mpi-replay-stats data
+        print 'Parsing '+hwName+'-msg-stats data...'
+        replayDataTemp = []
+        while True:
+            line = inFile.readline()
+            if not line: break
+            line = line.strip()
+            temp = line.split(" ")
+            #temp = [float(i) for i in temp]
+            if temp[met] == '-nan' or temp[met] == 'nan':
+                takingUpSpace = 1
+            else:
+                replayDataTemp.append(temp)
+        inFile.close()
+
+        # Extract model-switch-stats file header
         inFile = open(lpIoDir[sim]+'/'+mType+'-'+hwName+'-stats', 'r')
         line = inFile.readline()
         line = line.strip()
@@ -161,7 +234,7 @@ for met in metric:
         switchStatsHeader= temp.split(",")
         del switchStatsHeader[-1]
 
-        # Parse mpi-replay-stats data
+        # Parse model-router-stats data
         print 'Parsing '+hwName+'-stats data...'
         switchStatsDataTemp = []
         while True:
@@ -184,7 +257,7 @@ for met in metric:
         switchTrafficHeader= temp.split(",")
         del switchTrafficHeader[-1]
 
-        # Parse mpi-replay-stats data
+        # Parse traffic data
         print 'Parsing '+hwName+'-switch-traffic data...'
         switchTrafficDataTemp = []
         while True:
@@ -203,34 +276,75 @@ for met in metric:
             visDataTemp = switchStatsDataTemp
         elif dataFile == 2:
             visDataTemp = switchTrafficDataTemp
+        elif dataFile == 3:
+            visDataTemp = replayDataTemp
         for i in range(len(visDataTemp)):
             if dataFile == 0:
-                if met == 6:
-                    visData.append(float(visDataTemp[i][met])+1)
-                if met == 7:
-                    visData.append(float(visDataTemp[i][met])/1000)
-                #elif met == 4:
-                #    if float(visDataTemp[i][met+1]) > 0:
-                #        visData.append(float(visDataTemp[i][met]) / float(visDataTemp[i][met+1]))
-                else:
-                    visData.append(float(visDataTemp[i][met]))
+                if float(visDataTemp[i][met] > 0):
+                    if met == 6:
+                        if mType == "dragonfly":
+                            visData.append(float(visDataTemp[i][met]))
+                        else:
+                            visData.append(float(visDataTemp[i][met])+1)
+                    elif met == 7:
+                        visData.append(float(visDataTemp[i][met])/1000)
+                    elif met == 3:
+                        if float(visDataTemp[i][4]) > 0:
+                            visData.append(float(visDataTemp[i][met])/float(visDataTemp[i][4]))
+                    elif met == 4:
+                        visData.append(float(visDataTemp[i][met])/1000)
+                    elif met == 5:
+                        visData.append(float(visDataTemp[i][met])/1000)
+                    #elif met == 4:
+                    #    if float(visDataTemp[i][met+1]) > 0:
+                    #        visData.append(float(visDataTemp[i][met]) / float(visDataTemp[i][met+1]))
+                    else:
+                        visData.append(float(visDataTemp[i][met]))
             elif dataFile == 2:
                 for j in range(len(visDataTemp[i])-portMod):
-                    visData.append(float(visDataTemp[i][met+j])/1024/1024)
+                    if float(float(visDataTemp[i][met+j])/1024) > 0.0:
+                        visData.append(float(visDataTemp[i][met+j])/1024.0)
+            elif dataFile == 3:
+                    visData.append(float(visDataTemp[i][met]))
             else:
                 for j in range(len(visDataTemp[i])-portMod):
                     visData.append(float(visDataTemp[i][met+j])/1000)
 
         mean = sum(visData) / len(visData)
 
-        if sim == 0:
+
+        if plotType == 'bar':
+            # plot the bar chart
+            plt.bar(range(0,len(visData)), visData, align='center', alpha=0.5)
+        elif plotType == 'heatmap':
+            heatmapData.append(visData)
+        elif 'line' in plotType:
+            if plotType == 'line-sorted':
+                visData.sort()
+                markers=['None' for i in range(len(lineColor))]
+                #lineStyle=['-' for i in range(len(lineColor))]
+            else:
+                markers=['None' for i in range(len(lineColor))]
+            if simLabels == 0:
+                lines = ax.plot(visData, linewidth=lwidth, color=lineColor[sim], marker=markers[sim], markersize=markerSize, markevery=markerFrequency, linestyle = lineStyle[sim])
+            else:
+                lines = ax.plot(visData, label=simLabels[sim].replace('_','.').replace('-',' '), linewidth=lwidth, color=lineColor[sim], marker=markers[sim], markersize=markerSize, markevery=markerFrequency, linestyle = lineStyle[sim])
+        elif plotType =='cdf':
             # plot the cumulative histogram
-            n, bins, patches = ax.hist(visData, nBins, normed=1, histtype='step',
-                cumulative=True, label=simLabels[sim].replace('_','.').replace('-',' '), linewidth=lwidth)
-        else:
-            # Overlay a reversed cumulative histogram.
-            n, bins, patches = ax.hist(visData, nBins, normed=1, histtype='step', cumulative=True,
-                label=simLabels[sim].replace('_','.').replace('-',' '), linewidth=lwidth)
+            if simLabels == 0:
+                if logScale == True:
+                    binSpace = np.logspace(np.log10(1),np.log10(max(visData)),nBins)
+                else:
+                    binSpace = np.linspace(0,max(visData),nBins)
+                print max(visData)
+                n, bins, patches = ax.hist(visData, bins=binSpace, normed=1, histtype='step', cumulative=False, linewidth=lwidth, color=lineColor[sim])
+            else:
+                n, bins, patches = ax.hist(visData, nBins, normed=1, histtype='step', cumulative=True,
+                    label=simLabels[sim].replace('_','.').replace('-',' '), linewidth=lwidth, color=lineColor[sim])
+
+        if max(visData) > maxValue:
+            maxValue = max(visData)
+
 
         if annotateFigure == 1:
             #Annotate figure
@@ -328,6 +442,19 @@ for met in metric:
                 ax.annotate(''+str(round(mean,digits)), xy=(bins[np.searchsorted(bins,mean)], n[np.searchsorted(bins,mean)]),
                     xytext=(bins[np.searchsorted(bins,mean)] + avgMarkerOffsetX + avgMarkerTextOffsetX, n[np.searchsorted(bins,mean)] + avgMarkerOffsetY + avgMarkerTextOffsetY))
 
+    if plotType == 'heatmap':
+        temp = np.zeros([len(heatmapData),len(max(heatmapData,key = lambda x: len(x)))])
+        for i,j in enumerate(heatmapData):
+            temp[i][0:len(j)]=j
+        heatmapData = temp.tolist()
+        print len(heatmapData[0])
+        if met == 6:
+            imgplot = ax.imshow(heatmapData, cmap='jet', interpolation='nearest', aspect='auto')
+        else:
+            norm = colors.SymLogNorm(linthresh=0.001,linscale=0.01,vmin=min(min(heatmapData)), vmax=max(max(heatmapData)), clip='True')
+            imgplot = ax.imshow(heatmapData, cmap='jet', interpolation='nearest', norm=norm, aspect='auto')
+        cbar = fig.colorbar(imgplot, orientation='vertical')
+
     if axisLimits == 1:
         # tidy up the figure
         ax.set_axisbelow(True)
@@ -335,7 +462,7 @@ for met in metric:
         ax.xaxis.grid(color='gray', linestyle='dashed')
 
         # Set axis limits according to metric
-        ax.set_ylim([0.0,1.15])
+        #ax.set_ylim([0.0,1.01])
         if dataFile == 0:
             if met == 8:
                 if simLabels[sim] == 'mg10k':
@@ -344,14 +471,25 @@ for met in metric:
                     ax.set_xlim([250,264])
                 else:
                     ax.set_xlim([4.5,5.8])
-            elif met == 4:
-                print 'something'
-                #ax.set_xlim([4.5,6])
+            elif met == 6:
+                if plotType != 'heatmap':
+                    ax.set_xlim([3,10])
             elif met == 3:
-                #ax.set_xlim([0.4,4])
-                ax.set_ylim([0.0,1.15])
+                if plotType == 'cdf':
+                    ax.set_xlim([160,300000])
+                    ax.set_ylim([0.0,1.01])
+                elif 'line' in plotType:
+                    ax.set_ylim([200.0,maxValue*1.5])
+                elif plotType == 'heatmap':
+                    nothing = 0
+                    #ax.set_ylim([200.0,maxValue])
         elif dataFile == 2:
-            nothing = 0
+            if 'line' in plotType:
+                nothing = 0
+            else:
+                nothing = 0
+                #ax.set_ylim([0.0,1.01])
+                #ax.set_xlim([1,9000])
         else:
             if simLabels[sim] == 'cr1k':
                 ax.set_ylim([0.85,1.05])
@@ -360,30 +498,69 @@ for met in metric:
             else:
                 #ax.set_ylim([0.0,1.01])
                 something=1
+    else:
+        ax.set_axisbelow(True)
+        ax.yaxis.grid(color='gray', linestyle='dashed')
+        ax.xaxis.grid(color='gray', linestyle='dashed')
 
+        ax.set_ylim([0.0,1.25])
+
+    if logScale == True:
+        if plotType == 'cdf':
+            ax.set_xscale("log")
+        elif 'line' in plotType:
+            ax.set_yscale("symlog")
 
     #ax.grid(True)
     #ax.legend(loc=0)
     if met == 7:
         ax.legend(loc='upper left', ncol=3, borderaxespad=0.1)
+    elif met == 3 and dataFile == 0:
+        if plotType == 'line-sorted':
+            ax.legend(loc='upper left', ncol=3, borderaxespad=0.1)
     else:
-        ax.legend(loc='upper left', ncol=3, borderaxespad=0.1)
+        ax.legend(loc='upper center', ncol=3, borderaxespad=0.1)
+
     #ax.set_title('Cumulative step histograms')
     if dataFile == 0:
         xlabel = msgHeader[met]
     elif dataFile == 1:
         xlabel = 'Switch Link Busy Time [us]'
     elif dataFile == 2:
-        xlabel = 'Switch Link Traffic [MB]'
+        xlabel = 'Switch Link Traffic [KB]'
+    elif dataFile == 3:
+        xlabel = msgHeaderReplay[met]
     ax.set_xlabel(xlabel)
-    ax.set_ylabel('Cumulative Distribution')
 
-    plt.tight_layout()
+    if plotType == 'bar':
+        ax.set_ylabel(xlabel)
+        ax.set_xlabel('Rank ID')
+    elif 'line' in plotType:
+        ax.set_ylabel(xlabel)
+        if dataFile == 2:
+            ax.set_xlabel('Switch Link ID')
+        else:
+            ax.set_xlabel('Compute Node ID')
+    elif plotType == 'heatmap':
+        if dataFile == 2:
+            ax.set_xlabel('Switch Link ID')
+        else:
+            ax.set_xlabel('Compute Node ID')
+        ax.grid(b=None)
+        ax.yaxis.grid(color='black', linestyle='solid', linewidth=0.75)
+        #ax.set_ylabel('Simulation')
+        ax.set_yticks([i+0.5 for i in range(sim+1)])
+        ax.set_yticklabels(simLabels, rotation = 0, va='bottom')
+        cbar.set_label(xlabel)
+    else:
+        ax.set_ylabel('Cumulative Distribution')
+
+    plt.tight_layout(pad = 0.0)
 
     if pltSave == True:
-        fig.savefig(lpIoDir[sim]+'/'+simLabels[sim]+str(nodes[sim])+xlabel.replace(' ','')+'.pdf', dpi=320, facecolor='w',
-                edgecolor='w', orientation='portrait', papertype=None,
-                format=None, transparent=False, bbox_inches=None, 
-                pad_inches=0.25, frameon=None)
+        if outputDir:
+            fig.savefig(outputDir[0]+'/'+str(nodes[sim])+xlabel.replace(' ','')+'-'+postfix[0]+'-'+plotType+'.pdf', dpi=320)
+        else:
+            fig.savefig(lpIoDir[sim]+'/'+str(nodes[sim])+xlabel.replace(' ','')+'-'+postfix[0]+'.pdf', dpi=320)
     else:
         plt.show()
