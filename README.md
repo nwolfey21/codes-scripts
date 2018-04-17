@@ -7,7 +7,7 @@ Scripts for automating the building/executing processes for CODES, visualizing m
 * User enters the path to each framework's source directory and desired build directory.
 
 ### execution/workflow-combined.sh
-* Via selection of a long list of available parameters, this script handles the configuration and execution of codes model-net network trace (with and without background traffic) and synthetic workload simulations.
+* Via selection of a long list of available parameters, this script handles the configuration and execution of codes model-net network trace (with and without background traffic) and synthetic workload simulations as well as NeMo neuromorphic workloads.
 * Currently supports generation of:
   - Fat-tree, dragonfly-custom, and slim fly network model conf files
   - Contiguous, random, clustered, and hetereogeneous allocation conf files
