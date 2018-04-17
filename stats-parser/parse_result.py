@@ -27,7 +27,7 @@ from docopt import docopt
 import os
 import tempfile
 from ggplot import *
-#import pdb
+import pdb
 
 
 nemolabel = "NeMo"
@@ -255,7 +255,7 @@ def plotterPolarBar(non_col):
     #plt.show()
     fig.savefig('test.pdf', dpi=320, facecolor='w',
                 edgecolor='w', orientation='portrait', papertype=None,
-                format=None, transparent=False, bbox_inches=None, 
+                format=None, transparent=False, bbox_inches=None,
                 pad_inches=0.25, frameon=None)
 
 
@@ -330,7 +330,7 @@ def plotterBarAddHeightsLabels(ax, rects):
                 '%d' % int(height), ha='center', va='bottom')
 
 def plotterBar(non_col):
-    cpuTrace = ["AMG"]
+    cpuTrace = ["AMG" "MG"]
     #cpuTrace = ["AMG", "MG", "CR"]
     #cpuTrace = ["AMG"]
     neuro = ["none", "HF"]
@@ -339,7 +339,7 @@ def plotterBar(non_col):
     metric = "End Time"            #Options: Bytes Sent, Bytes Recvd, Total Sends, Total Recvs, End Time
     stat = "Max"                   #Statistical measure over terminals. Options: Min, Max, Mean, Sum
 
-    #Making call for values 
+    #Making call for values
     data, label = getPlotterValues(non_col, cpuTrace, topology, neuro, collector, metric, stat)
     #Making call for Percentages
     data, label = getPlotterPercents(non_col, cpuTrace, topology, [neuro[1]], collector, metric, stat)
@@ -374,7 +374,7 @@ def plotterBar(non_col):
     #plt.show()
     fig.savefig('test.pdf', dpi=320, facecolor='w',
                 edgecolor='w', orientation='portrait', papertype=None,
-                format=None, transparent=False, bbox_inches=None, 
+                format=None, transparent=False, bbox_inches=None,
                 pad_inches=0.25, frameon=None)
 
 

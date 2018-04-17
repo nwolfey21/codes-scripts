@@ -30,7 +30,7 @@ parser.add_argument('--disable-aggregate', action='store_false', default=True, d
                     help='If selected, disables the visualization of aggregate data')
 parser.add_argument('--trace-names', action='store', dest='traceNames',
                     help='if aggregate visualizations are enabled, need names of traces in alloc-file following csv format')
-parser.add_argument('--save', action='store_true', default=False, dest='pltSave',
+parser.add_argument('--save', action='store', default=True, dest='pltSave',
                     help='If selected, saves the plot to --lp-io-dir instead of printing to screen')
 parser.add_argument('--individual', action='store_true', default=False, dest='pltIndividually',
                     help='If selected, plots each figure individually')
@@ -54,7 +54,7 @@ traceNames = results.traceNames.split(',')
 pltSave = results.pltSave
 pltIndividually = results.pltIndividually
 dimensions = int(results.dimensions)
-
+pltSave = True
 rootdir = Path(lpIoDir)
 dir_list = [f for f in rootdir.glob('**/*') if f.is_dir()]
 
@@ -260,8 +260,8 @@ for lpIoDir in dir_list:
             for idx in range(len(Z)):
                 if dimensions == 3:
                     #ax.plot_surface(X, Y, Z, rstride=10, cstride=10)
-                    ax.plot(x1,[y1[idx]]*len(x1),Z[idx],color='blue')
-                    ax.view_init(elev=0, azim=270)
+                    ax.plot(x1,[y1[idx]]*len(x1),Z[idx])
+                    ax.view_init(elev=25, azim=270)
                     func_set_figure_3d('Virtual Time', 'MPI Rank ID', samplingHeader[metric],
                         samplingHeader[metric], 'TRUE')
                     #break
