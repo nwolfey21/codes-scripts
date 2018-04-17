@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 import csv
 import pdb
 
-filePath = '/home/noah/Dropbox/RPI/Research/Networks/codes-nemo-results/heterogeneous/hetero-nonaggr-updated2-endtime-opt-newmodels/ftree-3240nodes-static-1000000end-CONT-bkgnd-hf-10mintvl-1000000tintvl-3240ranks-10000mpt-8Bszmsg/'
-numIter = 500    #Number of iterations for force directed and spring layouts
+filePath = 'example-layout-input-files/fat-tree/'
+numIter = 1    #Number of iterations for force directed and spring layouts
 
 # Simulation Params
 k = 36                  # Switch radix
@@ -26,10 +26,13 @@ numLevels = 3           # Number of levels/layers of switches in the fat-tree
 numPlanes = 1           # Number of planes/rails in sumulation (currently only support one)
 numTerminals = 18       # Number of terminals/modelnet_fattree's per repetition (from network config file)
 # Plot Params
-plotType = "layered"    # Options: layered, spring, circular, force, random, shell, graphviz
+plotType = "spring"    # Options: layered, spring, circular, force, random, shell, graphviz
 exportGEXF = 1          # If true, exports the network in the Graph Exchange XML format (GEXF) for reading into Gephi or other application
+exportGRAPHML = 0
 w = 80                  # Width of figure
 h = w/2                 # Height of figure
+
+numNodes = 180*numTerminals
 
 # Input Down Connections file
 f = open(filePath + 'fattree-config-down-connections', 'rb')
@@ -73,8 +76,15 @@ fig, ax = plt.subplots(figsize=(w, h))
 G=nx.Graph()
 for i in nodes:
     G.add_node(i)
+    if i < numNodes:
+        G.node[i]['viz'] = {'color': {'r': 255, 'g': 0, 'b': 0, 'a': 0.6}}
+    else:
+        G.node[i]['viz'] = {'color': {'r': 0, 'g': 255, 'b': 0, 'a': 0.6}}
 for i in range(0,len(connections),2):
-    G.add_edge(connections[i],connections[i+1])
+    if connections[i] < numNodes or connections[i+1] < numNodes:
+        G.add_edge(connections[i],connections[i+1],weight=1)
+    else:
+        G.add_edge(connections[i],connections[i+1],weight=2)
 
 # Compute LP_type IDs
 terminalIds = []
@@ -116,9 +126,15 @@ if plotType == "layered":
     nx.draw_networkx_labels(G,pos)
 # Spring Layout
 if plotType == "spring":
-    pos=nx.spring_layout(G,iterations=numIter,scale=1)
-    nx.draw(G,pos)
-    nx.draw_networkx_labels(G,pos)
+    pos=nx.spring_layout(G,iterations=numIter,scale=1,dim=3)
+    #nx.draw(G,pos)
+    #nx.draw_networkx_labels(G,pos)
+    # Add positions to each node
+    #nx.set_node_attributes(G,'pos',pos)
+    for node,(x,y,z) in pos.items():
+        G.node[node]['x'] = float(x)
+        G.node[node]['y'] = float(y)
+        G.node[node]['z'] = float(z)
 # Force Directed Layout
 if plotType == "force":
     pos = nx.fruchterman_reingold_layout(G,iterations=numIter,scale=10)
@@ -141,9 +157,11 @@ if plotType == "graphviz":
 plt.tight_layout()
 fig.savefig('fat-tree-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
     edgecolor='w', orientation='portrait', papertype=None,
-    format=None, transparent=False, bbox_inches=None, 
+    format=None, transparent=False, bbox_inches=None,
     pad_inches=0.25, frameon=None)
 
 # Save graph in GEXF format
 if exportGEXF == 1:
-    nx.write_gexf(G,'ftree.gexf')
+    nx.write_gexf(G,'ftree'+str(numNodes)+'.gexf')
+if exportGRAPHML == 1:
+    nx.write_graphml(G,'ftree.graphml')
