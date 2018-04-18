@@ -145,9 +145,13 @@ then
     fi
     #BACKGROUND_RANKS_BATCH=("446" "891" "1782" "3564" "7128")
     #BACKGROUND_RANKS_BATCH=("3564")
-elif [ "$NET_MODEL" == "sfly" ]
+elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
 then
-    SF_TYPE=1   #Options: 0->single rail slim fly, 1->dual-rail slim fly (fit fly)
+    if [ "$NET_MODEL" == "ffly" ];then
+        SF_TYPE=1   #Options: 0->single rail slim fly, 1->dual-rail slim fly (fit fly)
+    else
+        SF_TYPE=0
+    fi
     ROUTING_ALG=minimal     # Options: minimal, nonminimal, adaptive
     LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
@@ -293,7 +297,7 @@ exec_loop() {
 
                 # Set trace params
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
-                SIM_END_TIME=500
+                SIM_END_TIME=1000000
                 # Setting Trace Sampling metrics
                 echo sim end time: ${SIM_END_TIME} sample points: ${SAMPLING_POINTS}
                 SAMPLING_INTERVAL=$(( ${SIM_END_TIME} / ${SAMPLING_POINTS} ))
@@ -305,7 +309,7 @@ exec_loop() {
                 echo "Setting model-net conf params"
                 if [ "$NET_MODEL_SIZE" == "150" ]
                 then
-                    if [ "$NET_MODEL" == "sfly" ]
+                    if [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                     then
                         REPS=50
                         NUM_ROUTERS=5
@@ -321,7 +325,7 @@ exec_loop() {
                     if [ "$NET_MODEL" == "ftree" ]
                     then
                         MODELNET_FATTREE=18
-                    elif [ "$NET_MODEL" == "sfly" ]
+                    elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                     then
                         REPS=338
                         NUM_ROUTERS=13
@@ -362,7 +366,7 @@ exec_loop() {
                     RAILS=1
                     TERMINAL_RADIX=${RAILS}
                     RAIL_ROUTING=random     #Options: random,adaptive
-                elif [ "$NET_MODEL" == "sfly" ]
+                elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                 then
                     SLIMFLY_ROUTER=1
                     MODELNET_ORDER=slimfly
@@ -388,7 +392,7 @@ exec_loop() {
                 if [ "$NET_MODEL" == "ftree" ]
                 then
                     TOTAL_NODES=$(( ${MODELNET_FATTREE} * ${REPS} ))
-                elif [ "$NET_MODEL" == "sfly" ]
+                elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                 then
                     TOTAL_NODES=$(( ${MODELNET_SLIMFLY} * ${REPS} ))
                 elif [ "$NET_MODEL" == "dfly" ]
@@ -418,7 +422,7 @@ exec_loop() {
                     else
                         NW_LP=$(( $(( $(( ${TOTAL_RANKS} + ${TOTAL_NODES} - 1 )) / ${TOTAL_NODES} )) * 18 ))
                     fi
-                elif [ "$NET_MODEL" == "sfly" ]
+                elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                 then
                     if [ "${ALLOC_POLICY}" == "heterogeneous" ];then
                         NW_LP=$(( 2 * 9 ))
@@ -438,7 +442,7 @@ exec_loop() {
                 if [ "$NET_MODEL" == "ftree" ]
                 then
                     NUM_CORES_PER_NODE=$(( ${NW_LP} / ${MODELNET_FATTREE} ))
-                elif [ "$NET_MODEL" == "sfly" ]
+                elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
                 then
                     NUM_CORES_PER_NODE=$(( ${NW_LP} / ${MODELNET_SLIMFLY} ))
                 elif [ "$NET_MODEL" == "dfly" ]
@@ -743,7 +747,7 @@ create_lp_io_dir_name() {
 
 create_net_conf() {
     echo "Creating network config file"
-    if [ "$NET_MODEL" == "sfly" ]
+    if [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
     then
         # Generate slim fly network model conf file
         echo Generating network model conf file...
@@ -909,7 +913,7 @@ create_alloc_conf() {
             if [ "$NET_MODEL" == "ftree" ]
             then
                 echo $(( ${MODELNET_FATTREE} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
-            elif [ "$NET_MODEL" == "sfly" ]
+            elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
             then
                 echo $(( ${MODELNET_SLIMFLY} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
             elif [ "$NET_MODEL" == "dfly" ]
@@ -961,7 +965,7 @@ create_alloc_conf() {
             if [ "$NET_MODEL" == "ftree" ]
             then
                 mv allocation-$(( ${MODELNET_FATTREE} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
-            elif [ "$NET_MODEL" == "sfly" ]
+            elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
             then
                 mv allocation-$(( ${MODELNET_SLIMFLY} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
             elif [ "$NET_MODEL" == "dfly" ]
