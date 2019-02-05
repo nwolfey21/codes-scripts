@@ -21,10 +21,11 @@ TRACE=1             # Whether or not to do a trace workload
 SYNTHETIC=0         # Whether or not to do a synthetic workload
 BACKGROUND=1        # Whether or not to do a Neuromorphic background workload
 DEBUG=0             # Runs sequentially in gdb 
-STUDY=hybrid-jobs # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, spike-aggregation, aggregation-scaling, vis-sampling, msg-size-scaling, offered-load-scaling, verification, routing-comparison, none
+STUDY=none # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, spike-aggregation, aggregation-scaling, vis-sampling, msg-size-scaling, offered-load-scaling, verification, routing-comparison, synthetic-comparison, none
                         # single-tick: Runs neuromorphic workloads for only one tick, extending the tick window long enough to allow all generated spikes to reach their destination. Currently does with and then without spike aggregation
                         # hybrid-jobs: Runs neuromorphic workloads in parallel with cpu trace workloads
                         # routing-comparison: Runs the network models under both adaptive and minimal routing protocols
+                        # synthetic-comparison: Runs each topology and synthetic workload with 100 messages at 90% injection load
 ENABLE_SAMPLING=1   # Sampling Parameters (Only if running TRACE workload or BACKGROUND workload)
 COPY_ANALYSIS=0     # Whether or not to copy output directory to an analysis directory
 if [ ${SYNTHETIC} == 1 ];then
@@ -46,7 +47,7 @@ elif [ ${BACKGROUND} == 1 ];then
         ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
     fi
 fi
-EXE_SYS=CCI 	    # Execution system. Options: CCI, server
+EXE_SYS=server 	    # Execution system. Options: CCI, server
 
 #################
 # CODES Paths #
@@ -83,13 +84,13 @@ NET_MODEL_SIZE=3k   # Size of HPC system: 150, 3k, 74k, 1m
 # Server Execution Params
 NUM_PROCESSES=1       # Physical MPI processes
 SYNCH=1                # ROSS event scheduling protocol
-EXTRAMEM=9000000        # Extra memory to allocate per MPI process last was 8500000
+EXTRAMEM=10000000        # Extra memory to allocate per MPI process last was 8500000
 BATCH=2                # ROSS batch parameter
-GVT=256                 # ROSS gvt parameter
-MAX_OPT_LOOKAHEAD=512 # ROSS max opt lookahead parameter
+GVT=128                 # ROSS gvt parameter
+MAX_OPT_LOOKAHEAD=100 # ROSS max opt lookahead parameter
 
 # CCI Execution Params (in addition to Server Execution Params)
-TIME_ALLOC=359       # Requested job allocation time limit
+TIME_ALLOC=350       # Requested job allocation time limit
 NUM_NODES=1        # Requested job number of nodes
 
 # Simulation End Time
@@ -102,7 +103,7 @@ SAMPLING_POINTS=100     # Number of points in time to sample trace metrics durin
 LOAD=0.5        # Percentage of terminal link bandwidth for servers to inject traffic
 NUM_MSGS=1000     # Number of messages to send per synthetic process
 PAYLOAD_SIZE=256 # Size of messages to send between synthetic processes
-WARM_UP_TIME=10 # Time delay before stats are collected. For accurate verification results
+WARM_UP_TIME=40000 # Time delay before stats are collected. For accurate verification results
 TRAFFIC=2       # Network model dependent
                 #    1: Uniform
                 #    2: Worst-case (Slim Fly & Fit Fly only)
@@ -113,6 +114,7 @@ TRAFFIC=2       # Network model dependent
                 #    7: Scatter
                 #    8: Bisection
                 #    9: All-2-All
+                #   10: Ping
 
 # Trace Workload Params
 NUM_JOBS=1          # Number of workloads to run in parallel
@@ -157,9 +159,7 @@ if [ "${STUDY}" == "verification" ];then
     CHUNK_SIZE=${PACKET_SIZE}
     MODELNET_SCHEDULER=fcfs
     ROUTER_DELAY=90
-    NUM_INJECTION_QUEUES=1
     NIC_SEQ_DELAY=0
-    NODE_COPY_QUEUES=1
     NODE_EAGER_LIMIT=16000
     VC_SIZE_DEFAULT=102400
     LINK_BANDWIDTH_DEFAULT=12.5
@@ -171,11 +171,15 @@ if [ "$NET_MODEL" == "ftree" ] || [ "$NET_MODEL" == "ftree2" ]
 then
     if [ "$NET_MODEL" == "ftree2" ];then
         FT_TYPE=2
+        NUM_INJECTION_QUEUES=2
+        NODE_COPY_QUEUES=2
         RAIL_SELECT=adaptive           # Options:
                                             # adaptive: routes along rail with least congestion
                                             # dedicated: routes along preselected rail
     else
         FT_TYPE=0
+        NUM_INJECTION_QUEUES=1
+        NODE_COPY_QUEUES=1
         RAIL_SELECT=none
     fi
     FTREE_MODEL=ftree10    #Options: ftree (summit approx w/11 pods), ftree10 (ftree with 10 pods)
@@ -215,15 +219,19 @@ elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
 then
     if [ "$NET_MODEL" == "ffly" ];then
         SF_TYPE=1   #Options: 0->single rail slim fly, 1->dual-rail slim fly (fit fly)
+        NUM_INJECTION_QUEUES=2
+        NODE_COPY_QUEUES=2
         RAIL_SELECT=congestion           # Options:
                                             # path: routes along rail with shortest path
                                             # congestion: routes along rail with least congestion
                                             # dedicated: routes along preselected rail
     else
         SF_TYPE=0
+        NUM_INJECTION_QUEUES=1
+        NODE_COPY_QUEUES=1
         RAIL_SELECT=none
     fi
-    ROUTING_ALG=minimal     # Options: minimal, nonminimal, adaptive
+    ROUTING_ALG=adaptive     # Options: minimal, nonminimal, adaptive
     LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
     CN_VC_SIZE=${LOCAL_VC_SIZE}
@@ -240,7 +248,7 @@ then
 elif [ "$NET_MODEL" == "dfly" ]
 then
     DFLY_MODEL=theta8       # Options: theta (regular theta), theta8 (8 group theta)
-    ROUTING_ALG=minimal    # Options: minimal, nonminimal, adaptive
+    ROUTING_ALG=adaptive    # Options: minimal, nonminimal, adaptive
     RAIL_SELECT=none
     LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
@@ -273,7 +281,7 @@ then
 elif [ "$NET_MODEL" == "ddfly" ]
 then
     DFLY_DALLY_MODEL=3k       # Options: 3k
-    ROUTING_ALG=minimal    # Options: minimal, nonminimal, adaptive
+    ROUTING_ALG=adaptive    # Options: minimal, nonminimal, adaptive
     RAIL_SELECT=none
     LOCAL_VC_SIZE=$(( ${VC_SIZE_INSTANCE} > 0 ? ${VC_SIZE_INSTANCE} : ${VC_SIZE_DEFAULT} ))
     GLOBAL_VC_SIZE=${LOCAL_VC_SIZE}
@@ -305,18 +313,24 @@ fi
 # Leave unused LOOP# variables set to ("1") so they are unused                                   #
 ##################################################################################################
 exec_loop() {
-    LOOP1=("ftree" "ftree2" "sfly" "ffly" "dfly")
-    LOOP1=("ffly" "ftree2")
-    LOOP1=("sfly" "dfly" "ddfly")
+    #LOOP1=("ftree" "ftree2" "sfly" "ffly" "dfly" "ddfly")
+    LOOP1=("ftree" "ftree2" "sfly" "ffly" "dfly" "ddfly")
+    #LOOP1=("ffly" "ftree2")
+    LOOP1=("sfly")
     if [ ${SYNTHETIC} == 1 ];then
-        LOOP2=("1" "3" "4" "5" "6" "7")
+        #LOOP2=("1" "3" "4" "5" "6" "7" "8" "9" "10")
+        LOOP2=("1" "3" "4" "5" "6" "7" "8")
         LOOP2=("1")
     elif [ ${BACKGROUND} == 1 ] && [ ${TRACE} == 0 ];then
         LOOP2=("mnist" "cifar" "hf")
+        LOOP2=("mnist")
     elif [ ${TRACE} == 1 ] && [ ${BACKGROUND} == 0 ];then
-        LOOP2=("cr1k")
+        LOOP2=("amg1k" "mg1k" "cr1k")
+        LOOP2=("amg1k")
     elif [ ${TRACE} == 1 ] && [ ${BACKGROUND} == 1 ];then
-        LOOP2=("mg1k" "cr1k")
+        LOOP2=("amg1k" "mg1k" "cr1k")
+        #LOOP2=("mg1k")
+        LOOP2=("cr1k")
     else
         echo "Must select one simulation option (options: synthetic, background, trace)"
         exit
@@ -336,6 +350,7 @@ exec_loop() {
                 echo Trace Job: ${JOBS[0]}
             elif [ ${TRACE} == 1 ] && [ ${BACKGROUND} == 1 ];then
                 JOBS=${L2}  # Set variable dependent on loop
+                BACKGROUND_JOB=("hf")
                 echo Trace Job: ${JOBS[0]}
             fi
             echo Network Model: ${NET_MODEL}
@@ -346,7 +361,7 @@ exec_loop() {
             elif [ "${STUDY}" == "hybrid-jobs" ];then
                 LOOP3=("mnist" "cifar" "hf")
             elif [ "${STUDY}" == "offered-load-scaling" ];then
-                LOOP3=($(seq 0.05 0.05 2.0))
+                LOOP3=($(seq 0.1 0.1 0.1))
             elif [ "${STUDY}" == "verification" ];then
                 LOOP3=($(seq 0.2 0.2 2.0))
             elif [ "${STUDY}" == "routing-comparison" ];then
@@ -395,6 +410,9 @@ exec_loop() {
             elif [ "${STUDY}" == "single-tick" ];then
                 TICK_INTERVAL=20000000   # Nanosecond length of a tick
                 LOOP3=("1" "0")
+            elif [ "${STUDY}" == "synthetic-comparison" ];then
+                LOOP3=("1.5") #Injection Load
+                LOOP3=($(seq 0.25 0.25 1.5))
             elif [ "${STUDY}" == "none" ];then
                 LOOP3=("1")
             fi
@@ -407,9 +425,17 @@ exec_loop() {
                     LINK_BANDWIDTH_INSTANCE=${L3}
                 elif [ "${STUDY}" == "offered-load-scaling" ];then
                     LOAD=${L3}
+                    NUM_MSGS=40000
                 elif [ "${STUDY}" == "verification" ];then
-                    TRAFFIC=1
-                    NUM_MSGS=10000
+                    #TRAFFIC=1
+                    WARM_UP_TIME=10000
+                    SIM_END_TIME=20000
+                    NUM_MSGS=2000000
+                    LOAD=${L3}
+                elif [ "${STUDY}" == "synthetic-comparison" ];then
+                    #TRAFFIC=1
+                    WARM_UP_TIME=0
+                    NUM_MSGS=100
                     LOAD=${L3}
                 elif [ "${STUDY}" == "routing-comparison" ];then
                     ROUTING_ALG=${L3}
@@ -437,9 +463,9 @@ exec_loop() {
                 if [ "${STUDY}" == "chip-scaling" ];then
                     BACKGROUND_RANKS=${L3}  # Set variable dependent on loop
                     if [ "$BACKGROUND_JOB" == "mnist" ];then
-                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-${L3}chips.csv
+                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-nonzero-${L3}chips.csv
                     elif [ "$BACKGROUND_JOB" == "cifar" ]; then
-                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-${L3}chips.csv
+                        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-nonzero-${L3}chips.csv
                     fi
                 fi
                 echo LOCAL_VC_SIZE: ${LOCAL_VC_SIZE}
@@ -447,17 +473,18 @@ exec_loop() {
                 # Set trace params
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
                 if [ ${SYNTHETIC} == 1 ];then
-                    SIM_END_TIME=1500000000
-                    SIM_END_TIME=10000
+                    if [ -z $SIM_END_TIME  ];then
+                        SIM_END_TIME=1500000000
+                    fi
                 fi
                 if [ ${BACKGROUND} == 1 ];then
-                    SIM_END_TIME=20000000
+                    SIM_END_TIME=5000000
                 fi
                 if [ ${TRACE} == 1 ];then
                     if [ "${JOBS[0]}" == "amg1k" ];then
-                        SIM_END_TIME=15000000
+                        SIM_END_TIME=1000000
                     elif [ "${JOBS[0]}" == "cr1k" ];then
-                        SIM_END_TIME=1000000000
+                        SIM_END_TIME=2000000
                     elif [ "${JOBS[0]}" == "mg1k" ];then
                         SIM_END_TIME=100000000
                     else
@@ -526,6 +553,7 @@ exec_loop() {
                     GENERATOR_SET_X='("1","25","33","11","16","30","10","28","34","36","12","4","26","21","7","27","9","3");'
                     GENERATOR_SET_X_PRIME='("32","23","20","19","31","35","24","8","15","5","14","17","18","6","2","13","29","22");'
                     MODELNET_SLIMFLY=27
+                    SERVERS=27
                 elif [ "$NET_MODEL_SIZE" == "1m" ]
                 then
                     echo System Size: 1m nodes
@@ -569,6 +597,8 @@ exec_loop() {
                     NUM_GLOBAL_CHANNELS=4
                     NUM_CNS_PER_ROUTER=${MODELNET_DRAGONFLY_CUSTOM}
                     MODELNET_ORDER='("dragonfly_custom","dragonfly_custom_router");'
+                    ADAPTIVE_THRESHOLD=0
+                    MINIMAL_BIAS=0      # Off or on
                 elif [ "$NET_MODEL" == "ddfly" ]
                 then
                     NUM_ROUTER_ROWS=1
@@ -576,7 +606,8 @@ exec_loop() {
                     NUM_GLOBAL_CHANNELS=12
                     NUM_CNS_PER_ROUTER=${MODELNET_DRAGONFLY_CUSTOM}
                     MODELNET_ORDER='("dragonfly_custom","dragonfly_custom_router");'
-                    ADAPTIVE_THRESHOLD=8192
+                    ADAPTIVE_THRESHOLD=0
+                    MINIMAL_BIAS=0      # Off or on
                 fi
 
                 # Compute Total Number of Nodes
@@ -766,7 +797,10 @@ exec_loop() {
                                         --analysis-lps=4 --vt-interval=12000 --vt-samp-end=${SIM_END_TIME} \
                                         -- ${NETWORK_CONF} | tee ${TEMP_LP_IO_DIR}/stdout-output
                                 else
-                                    mpirun -n ${NUM_PROCESSES} ${EXE_PATH} --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
+                                    #mpirun -n ${NUM_PROCESSES} ${EXE_PATH} \
+                                    #valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose --log-file=valgrind-out.txt ${EXE_PATH} \
+                                    valgrind --leak-check=yes --log-file=valgrind-out.txt ${EXE_PATH} \
+                                        --synch=${SYNCH} --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD} \
                                         --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE} \
                                         --alloc_file=${ALLOC_CONF} --lp-io-dir=${LP_IO_DIR} \
                                         --enable_sampling=${ENABLE_SAMPLING} --sampling_interval=${SAMPLING_INTERVAL} \
@@ -838,7 +872,6 @@ get_trace_params() {
     then
         TRACE_PREFIXES=("${TRACE_DIR}/df_AMG_n1728_dumpi/dumpi-2014.03.03.14.55.50-")
         RANKS_PER_JOB=("1728")
-        SIM_END_TIME=1000000
     elif [ "$JOBS" == "amg13k" ]
     then
         TRACE_PREFIXES=("${TRACE_DIR}/df_AMG_n13824_dumpi/dumpi-2014.03.03.15.09.03-")
@@ -847,7 +880,6 @@ get_trace_params() {
     then
         TRACE_PREFIXES=("${TRACE_DIR}/MultiGrid_C_n1000_dumpi/dumpi-2014.03.07.00.25.12-")
         RANKS_PER_JOB=("1000")
-        SIM_END_TIME=1000000
     elif [ "$JOBS" == "mg10k" ]
     then
         TRACE_PREFIXES=("${TRACE_DIR}/MultiGrid_C_n10648_dumpi/dumpi-2014.03.07.00.39.10-")
@@ -860,7 +892,6 @@ get_trace_params() {
     then
         TRACE_PREFIXES=("${TRACE_DIR}/CrystalRouter_n1000_dumpi/dumpi--2014.04.23.12.17.17-")
         RANKS_PER_JOB=("1000")
-        SIM_END_TIME=1000000
     elif [ "$JOBS" == "cr10" ]
     then
         TRACE_PREFIXES=("${TRACE_DIR}/CrystalRouter_n10_dumpi/dumpi--2014.04.23.12.08.27-")
@@ -929,12 +960,12 @@ get_background_wrkld_params(){
         SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=1
         BACKGROUND_RANKS=1024
-        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-1024chips.csv
+        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/cifar100-nonzero-1024chips.csv
     elif [ "$BACKGROUND_JOB" == "mnist" ];then
         SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=1
         BACKGROUND_RANKS=1234
-        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-1234chips.csv
+        CHIP_FILE=${TRACE_DIR}/codes-nemo/chip-connection-files/mnist-nonzero-1234chips.csv
     elif [ "$BACKGROUND_JOB" == "none" ];then
         SPIKES_PER_TICK=0
         CHIP_CONNECTIONS=0
@@ -1073,12 +1104,13 @@ create_net_conf() {
         echo "    intra-group-connections=\"${INTRA_GROUP_CONNECTIONS}\";" >> ${NETWORK_CONF}
         echo "    inter-group-connections=\"${INTER_GROUP_CONNECTIONS}\";" >> ${NETWORK_CONF}
         echo "    routing=\"${ROUTING_ALG}\";" >> ${NETWORK_CONF}
+        echo "    adaptive_threshold=\"${ADAPTIVE_THRESHOLD}\";" >> ${NETWORK_CONF}
+        echo "    minimal-bias=\"${MINIMAL_BIAS}\";" >> ${NETWORK_CONF}
         echo "    num_injection_queues=\"${NUM_INJECTION_QUEUES}\";" >> ${NETWORK_CONF}
         echo "    nic_seq_delay=\"${NIC_SEQ_DELAY}\";" >> ${NETWORK_CONF}
         echo "    node_copy_queues=\"${NODE_COPY_QUEUES}\";" >> ${NETWORK_CONF}
         echo "    node_eager_limit=\"${NODE_EAGER_LIMIT}\";" >> ${NETWORK_CONF}
         if [ "$NET_MODEL" == "ddfly" ];then
-            echo "    adaptive_threshold=\"${ADAPTIVE_THRESHOLD}\";" >> ${NETWORK_CONF}
             echo "    df-dally-vc=\"1\";" >> ${NETWORK_CONF}
             echo "    num_row_chans=\"1\";" >> ${NETWORK_CONF}
             echo "    num_col_chans=\"1\";" >> ${NETWORK_CONF}
@@ -1158,7 +1190,7 @@ create_alloc_conf() {
             elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
             then
                 echo $(( ${MODELNET_SLIMFLY} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
-            elif [ "$NET_MODEL" == "dfly" ]
+            elif [ "$NET_MODEL" == "dfly" ] || [ "$NET_MODEL" == "ddfly" ]
             then
                 echo $(( ${MODELNET_DRAGONFLY_CUSTOM} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
             fi
@@ -1206,13 +1238,13 @@ create_alloc_conf() {
         then
             if [ "$NET_MODEL" == "ftree" ] || [ "$NET_MODEL" == "ftree2" ]
             then
-                mv allocation-$(( ${MODELNET_FATTREE} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
+                mv rand_node1-alloc-$(( ${MODELNET_FATTREE} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
             elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
             then
-                mv allocation-$(( ${MODELNET_SLIMFLY} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
-            elif [ "$NET_MODEL" == "dfly" ]
+                mv rand_node1-alloc-$(( ${MODELNET_SLIMFLY} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
+            elif [ "$NET_MODEL" == "dfly" ] || [ "$NET_MODEL" == "ddfly" ]
             then
-                mv allocation-$(( ${MODELNET_DRAGONFLY_CUSTOM} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
+                mv rand_node1-alloc-$(( ${MODELNET_DRAGONFLY_CUSTOM} * ${REPS} ))-${TEMP_NAME}-$(( ${NUM_ALLOCS} -1 )).conf ${ALLOC_CONF}
             fi
         elif [ "${ALLOC_POLICY}" == "heterogeneous" ]   # Currently only supports one trace job
         then
@@ -1230,7 +1262,6 @@ create_alloc_conf() {
                     fi
                 done
             done
-            #rm -rf ${ALLOC_CONF}
             #for i in `seq 0 2 $(( ${RANKS_PER_JOB[0]}*2 -1))`
             #do
             #    echo -n "${i} " >> ${ALLOC_CONF}

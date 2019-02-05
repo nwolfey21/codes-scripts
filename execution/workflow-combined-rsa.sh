@@ -53,7 +53,7 @@ EXE_SYS=CCI 	    # Execution system. Options: CCI, server
 #################
 echo "Setting Paths"
 if [ "$EXE_SYS" == "CCI" ]; then
-    BUILD_DIR=/gpfs/u/home/SPNR/SPNRwlfn/scratch/build-drp-codes-nemo/build-codes-unified
+    BUILD_DIR=/gpfs/u/home/SPNR/SPNRwlfn/scratch/build-rsa-codes-nemo/build-codes-unified
     CODES_DIR=/gpfs/u/home/SPNR/SPNRwlfn/barn/codes-unified/codes
     TRACE_DIR=/gpfs/u/home/SPNR/SPNRwlfn/scratch/dumpi-traces
 elif [ "$EXE_SYS" == "server" ]; then

@@ -10,16 +10,30 @@ Currently only single rail/plane configurations are supported
 Saves the generated plot to current working directory
 '''
 import networkx as nx
+import argparse
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import csv
 import pdb
 
+# Parse commandline arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--lp-io-dir', action='store', dest='lpIoDir',
+                    help='path to the directory containing all modelnet sim data.\nIt can be the lp-io directory for one run or a higher level directory with many lp-io dirs within')
+parser.add_argument('--visualize-sim', action='store_true', default=False, dest='pltIndividually',
+                    help='If selected, plots each figure individually')
+results = parser.parse_args()
+print 'lp io dir          =', results.lpIoDir
+#rootdir = Path(lpIoDir)
+#dir_list = [f for f in rootdir.glob('**/*') if f.is_dir()]
+
 numIter = 1    #Number of iterations for force directed and spring layouts
 
 # Visualization Params
-systemSize = 3072        # Options: 150, 3042
+systemSize = 3200        # Options: 150, 3042
+systemType = "dally"    # Options: dally, cray
 plotType = "spring"    # Options: grid, spring, circular, force, random, shell
 exportGEXF = 1          # If true, exports the network in the Graph Exchange XML format (GEXF) for reading into Gephi or other application
 w = 20                  # Width of figure
@@ -27,7 +41,12 @@ h = w/2                 # Height of figure
 
 
 # Simulation Params
-filePath = 'example-layout-input-files/dragonfly/dfly3072-connections.csv'
+filePath = '../../codes-nemo-results/hybrid-bugfix2/ddfly-3200nodes-adaptive-none-100000000end-65536vc-12.5GBps-CONT-trace-mg1k/'
+filePath = '../../codes-nemo-results/hybrid-bugfix2/dfly-3072nodes-adaptive-none-100000000end-65536vc-12.5GBps-CONT-trace-mg1k/'
+filePathConnections = 'example-layout-input-files/dragonfly/dfdally3200-connections.csv'
+if "ddfly" not in filePath:
+    systemType = "cray"
+    filePathConnections = 'example-layout-input-files/dragonfly/dfly3072-connections.csv'
 reps = 338              # Number of model-net reps (from network config file)
 numRouters = 13         # q value. Number of routers per group and number of groups per subgraph
 numLocal = 6           # Number of levels/layers of switches in the dragonfly
@@ -37,8 +56,57 @@ k = numLocal + numGlobal + numTerminals     # Switch radix
 
 totalTerminals = numTerminals * reps
 
+# Extract fattree-switch-traffic file header
+inFile = open(filePath+'/dragonfly-router-traffic', 'r')
+line = inFile.readline()
+line = line.strip()
+temp = line.replace('# Format','')
+temp = temp.replace(' <','')
+temp = temp.replace('>',',')
+switchTrafficHeader= temp.split(",")
+del switchTrafficHeader[-1]
+
+# Parse traffic data
+print 'Parsing dragonfly-switch-traffic data...'
+switchTrafficDataTemp = {}
+lineCounter = 1
+while True:
+    line = inFile.readline()
+    if not line: break
+    line = line.strip()
+    temp = line.split(" ")
+    if systemType == "cray":
+        routerID = int(temp[0]) + lineCounter * 4
+        lineCounter += 1
+    else:
+        routerID = int(temp[0])
+    temp = [float(i) for i in temp[3:]]
+    temp = sum(temp)
+    switchTrafficDataTemp[routerID] = temp
+inFile.close()
+
+# Parse model-msg-stats data
+inFile = open(filePath+'/dragonfly-msg-stats', 'r')
+met = 5
+print 'Parsing dragonfly-msg-stats data...'
+while True:
+    line = inFile.readline()
+    if not line: break
+    line = line.strip()
+    temp = line.split(" ")
+    if systemType == "cray":
+        terminalID = int(temp[1]) + 8 + int(int(temp[1])/4) * 9
+    else:
+        terminalID = int(temp[0])
+    #temp = [float(i) for i in temp]
+    if temp[met] == '-nan' or temp[met] == 'nan':
+        takingUpSpace = 1
+    else:
+        switchTrafficDataTemp[terminalID] = float(temp[met])
+inFile.close()
+
 # Input Up Connections file
-f = open(filePath, 'rb')
+f = open(filePathConnections, 'rb')
 data = csv.reader(f)
 up = []
 for row in data:
@@ -60,24 +128,45 @@ fig, ax = plt.subplots(figsize=(w, h))
 
 # Construct graph
 G=nx.Graph()
-for i in nodes:
-    G.add_node(i)
-    #Color routers
-    if i % 13 == 12:
-        G.node[i]['viz'] = {'color': {'r': 0, 'g': 255, 'b': 0, 'a': 0.6}}
-    #Color terminals
-    else:
-        G.node[i]['viz'] = {'color': {'r': 255, 'g': 0, 'b': 0, 'a': 0.6}}
-for i in range(0,len(connections),2):
-    if connections[i] % 13 == 12 and connections[i+1] % 13 == 12:
-        if int(connections[i] / 1248) == int(connections[i+1] / 1248):
-            G.add_edge(connections[i],connections[i+1],weight=3)
+if systemType == "cray":
+    for i in nodes:
+        G.add_node(i)
+        #Color routers
+        if i % 13 == 12:
+            G.node[i]['viz'] = {'color': {'r': 0, 'g': 255, 'b': 0, 'a': 0.6}}
+        #Color terminals
+        else:
+            G.node[i]['viz'] = {'color': {'r': 255, 'g': 0, 'b': 0, 'a': 0.6}}
+    for i in range(0,len(connections),2):
+        if connections[i] % 13 == 12 and connections[i+1] % 13 == 12:
+            if int(connections[i] / 1248) == int(connections[i+1] / 1248):
+                G.add_edge(connections[i],connections[i+1],weight=3)
+            else:
+                G.add_edge(connections[i],connections[i+1],weight=2)
+        else:
+            G.add_edge(connections[i],connections[i+1],weight=1)
+        if connections[i] == 9423:
+            print connections[i+1]
+
+elif systemType == "dally":
+    for i in nodes:
+        G.add_node(i)
+        #Color routers
+        if i % 17 == 16:
+            G.node[i]['viz'] = {'color': {'r': 0, 'g': 255, 'b': 0, 'a': 0.6}}
+        #Color terminals
+        else:
+            G.node[i]['viz'] = {'color': {'r': 255, 'g': 0, 'b': 0, 'a': 0.6}}
+    for i in range(0,len(connections),2):
+        if connections[i] % 17 == 16 and connections[i+1] % 17 == 16:
+            if int(int(connections[i] / 17) / 16) == int(int(connections[i+1] / 17) / 16):
+                G.add_edge(connections[i],connections[i+1],weight=3)
+            else:
+                G.add_edge(connections[i],connections[i+1],weight=1)
         else:
             G.add_edge(connections[i],connections[i+1],weight=2)
-    else:
-        G.add_edge(connections[i],connections[i+1],weight=1)
-    if connections[i] == 9423:
-        print connections[i+1]
+        if connections[i] == 9423:
+            print connections[i+1]
 
 # Compute positions in graph
 if plotType == "grid":
@@ -107,9 +196,13 @@ if plotType == "grid":
     nx.draw_networkx_labels(G,pos)
 # Spring Layout
 if plotType == "spring":
-    pos=nx.spring_layout(G,iterations=numIter,scale=1)
-    nx.draw(G,pos)
-    nx.draw_networkx_labels(G,pos)
+    pos=nx.spring_layout(G,iterations=numIter,scale=1,dim=3)
+    #nx.draw(G,pos)
+    #nx.draw_networkx_labels(G,pos)
+    for node,(x,y,z) in pos.items():
+        G.node[node]['x'] = float(x)
+        G.node[node]['y'] = float(y)
+        G.node[node]['z'] = float(z)
 # Force Directed Layout
 if plotType == "force":
     pos = nx.fruchterman_reingold_layout(G,iterations=numIter,scale=10)
@@ -125,13 +218,19 @@ if plotType == "circular":
 if plotType == "shell":
     nx.draw_shell(G)
 
+nx.set_node_attributes(G, 'traffic', switchTrafficDataTemp)
+
 # Clean and Save Figure
 plt.tight_layout()
-fig.savefig('dfly'+str(systemSize)+'-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
+if systemType == "cray":
+    prefix = 'dfcray'
+elif systemType == "dally":
+    prefix = 'dfdally'
+fig.savefig(prefix+str(systemSize)+'-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
     edgecolor='w', orientation='portrait', papertype=None,
     format=None, transparent=False, bbox_inches=None, 
     pad_inches=0.25, frameon=None)
 
 # Save graph in GEXF format
 if exportGEXF == 1:
-    nx.write_gexf(G,'dfly'+str(systemSize)+'.gexf')
+    nx.write_gexf(G,filePath+prefix+str(systemSize)+'.gexf')

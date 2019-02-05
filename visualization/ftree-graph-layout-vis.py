@@ -10,13 +10,27 @@ Currently only single rail/plane configurations are supported
 Saves the generated plot to current working directory
 '''
 import networkx as nx
+import argparse
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import csv
 import pdb
 
-filePath = 'example-layout-input-files/fat-tree/'
+# Parse commandline arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--lp-io-dir', action='store', dest='lpIoDir',
+                    help='path to the directory containing all modelnet sim data.\nIt can be the lp-io directory for one run or a higher level directory with many lp-io dirs within')
+parser.add_argument('--visualize-sim', action='store_true', default=False, dest='pltIndividually',
+                    help='If selected, plots each figure individually')
+results = parser.parse_args()
+print 'lp io dir          =', results.lpIoDir
+#rootdir = Path(lpIoDir)
+#dir_list = [f for f in rootdir.glob('**/*') if f.is_dir()]
+
+filePath = '../../fit-fly-results/ftree2-3240nodes-static-none-15000000end-65536vc-12.5GBps-synthetic-traffic1-load0.95/'
+filePath = '../../codes-nemo-results/hybrid-bugfix2/ftree2-3240nodes-static-adaptive-100000000end-65536vc-12.5GBps-CONT-trace-mg1k/'
 numIter = 1    #Number of iterations for force directed and spring layouts
 
 # Simulation Params
@@ -33,6 +47,64 @@ w = 80                  # Width of figure
 h = w/2                 # Height of figure
 
 numNodes = 180*numTerminals
+numSwitches = reps*numLevels
+
+# Extract fattree-switch-traffic file header
+inFile = open(filePath+'/fattree-switch-traffic', 'r')
+line = inFile.readline()
+line = line.strip()
+temp = line.replace('# Format','')
+temp = temp.replace(' <','')
+temp = temp.replace('>',',')
+switchTrafficHeader= temp.split(",")
+del switchTrafficHeader[-1]
+
+# Parse traffic data
+print 'Parsing fattree-switch-traffic data...'
+switchTrafficDataTemp = {}
+while True:
+    line = inFile.readline()
+    if not line: break
+    line = line.strip()
+    temp = line.split(" ")
+    routerID = int(temp[3]) + int(temp[1])*numSwitches
+    temp = [float(i) for i in temp[4:]]
+    temp = sum(temp)
+    switchTrafficDataTemp[routerID+numNodes] = temp
+inFile.close()
+
+# Extract model-msg-stats file header
+inFile = open(filePath+'/fattree-msg-stats', 'r')
+line = inFile.readline()
+line = line.strip()
+temp = line.replace('# Format','')
+temp = temp.replace(' <','')
+temp = temp.replace('>',',')
+temp = temp.replace('Total Data Size','Data Per Terminal [bytes]')
+temp = temp.replace('Total Packet Latency','Aggregate Packet Latency [ns]')
+temp = temp.replace('# Flits/','')
+temp = temp.replace('hops','Hops')
+temp = temp.replace('Busy Time','Terminal Busy Time [us]')
+temp = temp.replace('End Time','End Time [ms]')
+temp = temp.replace('Packets Generated', 'Packets Generated [1e3]')
+temp = temp.replace('Packets finished', 'Packets Finished [1e3]')
+msgHeader = temp.split(",")
+del msgHeader[-1]
+# Parse model-msg-stats data
+met = 5
+print 'Parsing fattree-msg-stats data...'
+while True:
+    line = inFile.readline()
+    if not line: break
+    line = line.strip()
+    temp = line.split(" ")
+    terminalID = int(temp[1])
+    #temp = [float(i) for i in temp]
+    if temp[met] == '-nan' or temp[met] == 'nan':
+        takingUpSpace = 1
+    else:
+        switchTrafficDataTemp[terminalID] = float(temp[met])
+inFile.close()
 
 # Input Down Connections file
 f = open(filePath + 'fattree-config-down-connections', 'rb')
@@ -85,6 +157,8 @@ for i in range(0,len(connections),2):
         G.add_edge(connections[i],connections[i+1],weight=1)
     else:
         G.add_edge(connections[i],connections[i+1],weight=2)
+
+nx.set_node_attributes(G, 'traffic', switchTrafficDataTemp)
 
 # Compute LP_type IDs
 terminalIds = []
@@ -162,6 +236,6 @@ fig.savefig('fat-tree-layout-'+plotType+'.pdf', dpi=320, facecolor='w',
 
 # Save graph in GEXF format
 if exportGEXF == 1:
-    nx.write_gexf(G,'ftree'+str(numNodes)+'.gexf')
+    nx.write_gexf(G,filePath+'ftree'+str(numNodes)+'.gexf')
 if exportGRAPHML == 1:
     nx.write_graphml(G,'ftree.graphml')

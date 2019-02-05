@@ -80,6 +80,7 @@ def func_extract_metric_aggregate(timeBins,ranks,traces,allocs,metric):
             if str(int(samplingData[y][1][0])) in allocs[t]:
                 agg = 0
                 for x in range(numTimeBins):
+                    pdb.set_trace()
                     if samplingData[y][metric][x] > 1e10:
                         agg += 0
                     else:
@@ -108,6 +109,44 @@ def func_set_figure_2d(xlabel,ylabel,title,grid):
     plt.grid(grid)
 
 
+# Set up plot styles
+lineColor = ['red','limegreen','blue','darkred','darkgreen','darkblue','salmon','lightgreen','lightskyblue','yellow']
+lineColor = ['royalblue','salmon','gold','green','gold','royalblue','violet','darkviolet']
+markers = ['x','+','*','v','o','s','p','v','d','8','1']
+lineStyle = ['-','--','-','--','-','--','-','--','-','-']
+lineWidth = 0.8
+markerSize = 2.5
+figHeight = 2.5
+figWidth = 3
+fontSize = 8
+matplotlib.rcParams.update({'font.size': fontSize})
+# List for the aggregate visualization data sets
+linePlot = []
+# Set up plotting environment for aggregate visualization
+if pltIndividually == True:
+    fig = plt.figure(figsize=(figWidth,figHeight))
+else:
+    if first:
+        fig = plt.figure(figsize=(figWidth,figHeight))
+        first = False
+if pltIndividually == True:
+    if dimensions == 3:
+        ax = fig.add_subplot(1,1,1,projection='3d')
+    else:
+        ax = fig.add_subplot(1,1,1)
+else:
+    if dimensions == 3:
+        ax = fig.add_subplot(math.ceil(math.sqrt(len(metrics)-metrics[0])),
+                            math.ceil(math.sqrt(len(metrics)-metrics[0])),
+                            metric-metrics[0]+1, projection='3d')
+    else:
+        ax = fig.add_subplot(math.ceil(math.sqrt(numMetrics-metrics[0])),
+                            math.ceil(math.sqrt(numMetrics-metrics[0])),
+                            metric-metrics[0]+1)
+    fig.tight_layout()
+
+dir_list.sort()
+dir_list = [str(x) for x in dir_list]
 # Loop over all subdirectories to visualize available sampling data
 for lpIoDir in dir_list:
     print ("Processing directory:"+str(lpIoDir))
@@ -243,7 +282,6 @@ for lpIoDir in dir_list:
     # Generating sampling visualizations
     if sampling == True:
         print ('Generating Sampling Visualizations...')
-        line = []
         x1 = np.array(range(numTimeBins)) * samplingInterval / 1000000
         y1 = np.array(range(numRanks))
         X, Y = np.meshgrid(x1,y1)
@@ -251,52 +289,37 @@ for lpIoDir in dir_list:
             metrics = [3,4]
         first = True
         for metric in metrics:
-            if pltIndividually == True:
-                fig = plt.figure(figsize=(6,6))
-            else:
-                if first:
-                    fig = plt.figure(figsize=(13,7.5))
-                    first = False
-            if pltIndividually == True:
-                if dimensions == 3:
-                    ax = fig.add_subplot(1,1,1,projection='3d')
-                else:
-                    ax = fig.add_subplot(1,1,1)
-            else:
-                if dimensions == 3:
-                    ax = fig.add_subplot(math.ceil(math.sqrt(len(metrics)-metrics[0])),
-                                        math.ceil(math.sqrt(len(metrics)-metrics[0])),
-                                        metric-metrics[0]+1, projection='3d')
-                else:
-                    ax = fig.add_subplot(math.ceil(math.sqrt(numMetrics-metrics[0])),
-                                        math.ceil(math.sqrt(numMetrics-metrics[0])),
-                                        metric-metrics[0]+1)
-                fig.tight_layout()
             Z = func_extract_metric_sampling(x1,y1,metric)
             #ax.plot_surface(X, Y, Z, rstride=10, cstride=10)
-            for idx in range(len(Z)):
-                if dimensions == 3:
+            if dimensions == 3:
+                for idx in range(len(Z)):
                     #ax.plot_surface(X, Y, Z, rstride=10, cstride=10)
                     ax.plot(x1,[y1[idx]]*len(x1),Z[idx])
                     ax.view_init(elev=25, azim=270)
                     func_set_figure_3d('Virtual Time', 'MPI Rank ID', samplingHeader[metric],
                         samplingHeader[metric], 'TRUE')
                     #break
-                else:
-                    line.append(ax.plot(x1,Z[idx]))
-                    ax.set_xlabel('Virtual Time (ms)')
-                    ax.set_ylabel(samplingHeader[metric])
-                    ax.set_title(samplingHeader[metric])
-                    ax.set_xlim([0,1.0])
-                    ax.set_ylim([0,400.0])
-                    #plt.text(60, .025, r'$\mu=100,\ \sigma=15$')
-                    ax.legend(loc='upper left', ncol=1, borderaxespad=0.1)
-                    ax.set_axisbelow(True)
-                    ax.yaxis.grid(color='gray', linestyle='dashed')
-                    ax.xaxis.grid(color='gray', linestyle='dashed')
-                    #ax.view_init(elev=-270, azim=270)
-                    #func_set_figure_3d('Virtual Time', samplingHeader[metric],' ',
-                    #    samplingHeader[metric], 'TRUE')
+            else:
+                Z = np.sum(Z, axis=0)
+                topo = dir_list.index(lpIoDir)
+                #x1 = [tempX*1000 for tempX in x1]
+                linePlot.append(ax.plot(x1,Z, ls=lineStyle[topo], c=lineColor[topo], marker=markers[topo], markersize=markerSize, lw=lineWidth))
+                ax.set_xlabel('Virtual Time [ms]')
+                ax.set_ylabel(samplingHeader[metric])
+                #ax.set_title(samplingHeader[metric])
+                ax.set_xlim([0,0.025])
+                #plt.text(60, .025, r'$\mu=100,\ \sigma=15$')
+                #ax.legend(['dfly-1d','dfly-2d','ftree','sfly'], loc='upper right', ncol=1, borderaxespad=0.1)
+                #ax.legend(['contiguous','random'], loc='upper right', ncol=1, borderaxespad=0.1)
+                ax.set_axisbelow(True)
+                ax.yaxis.grid(color='gray', linestyle='dashed')
+                ax.xaxis.grid(color='gray', linestyle='dashed')
+                #ax.view_init(elev=-270, azim=270)
+                #func_set_figure_3d('Virtual Time', samplingHeader[metric],' ',
+                #    samplingHeader[metric], 'TRUE')
+
+            fig.tight_layout(pad=0.4)
+
             if pltIndividually == True:
                 if pltSave == True:
                     fig.savefig(lpIoDir+'/sampling'+samplingHeader[metric].replace(' ','')+'.pdf', dpi=320, facecolor='w',
@@ -319,6 +342,7 @@ for lpIoDir in dir_list:
         print ('Generating Aggregate Visualizations...')
         x1 = np.array(range(numTimeBins)) * samplingInterval
         y1 = np.array(range(numRanks))
+        pdb.set_trace()
         if len(metrics) == 0:
             metrics = [3,4]
         first = True

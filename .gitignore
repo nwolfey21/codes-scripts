@@ -5,3 +5,8 @@ visualization/gephi-files/
 visualization/gml-files/
 visualization/xml-files/
 visualization/network-layout-figs/
+*.pdf
+*.gephi
+*.eps
+*.gexf
+*.csv

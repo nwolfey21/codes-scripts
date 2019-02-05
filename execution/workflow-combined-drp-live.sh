@@ -17,35 +17,16 @@
 VIS=0               # Whether or not to perform post-process visualization
 COMM_MAP=0          # Whether or not to generate the post process communication heat map visualization
 SIM=1               # Whether or not to perform a codes model simulation (must be set in addition to TRACE, SYNTHETIC, and/or, BACKGROUND)
-TRACE=1             # Whether or not to do a trace workload
-SYNTHETIC=0         # Whether or not to do a synthetic workload
-BACKGROUND=1        # Whether or not to do a Neuromorphic background workload
+TRACE=0             # Whether or not to do a trace workload
+SYNTHETIC=1         # Whether or not to do a synthetic workload
+BACKGROUND=0        # Whether or not to do a Neuromorphic background workload
 DEBUG=0             # Runs sequentially in gdb 
-STUDY=hybrid-jobs # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, spike-aggregation, aggregation-scaling, vis-sampling, msg-size-scaling, offered-load-scaling, verification, routing-comparison, none
+STUDY=offered-load-scaling # What study (if any) are we running. Options: chip-scaling, spike-scaling, buffer-scaling, link-scaling, spike-aggregation, aggregation-scaling, vis-sampling, msg-size-scaling, offered-load-scaling, verification, routing-comparison, none
                         # single-tick: Runs neuromorphic workloads for only one tick, extending the tick window long enough to allow all generated spikes to reach their destination. Currently does with and then without spike aggregation
                         # hybrid-jobs: Runs neuromorphic workloads in parallel with cpu trace workloads
                         # routing-comparison: Runs the network models under both adaptive and minimal routing protocols
 ENABLE_SAMPLING=1   # Sampling Parameters (Only if running TRACE workload or BACKGROUND workload)
-COPY_ANALYSIS=0     # Whether or not to copy output directory to an analysis directory
-if [ ${SYNTHETIC} == 1 ];then
-    if [ "${STUDY}" == "none" ];then
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/random-runs   #Only needed if COPY_ANALYSIS=1
-    else
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
-    fi
-elif [ ${TRACE} == 1 ];then
-    if [ "${STUDY}" == "none" ];then
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/cpu-traces
-    else
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
-    fi
-elif [ ${BACKGROUND} == 1 ];then
-    if [ "${STUDY}" == "none" ];then
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/neuro-traces
-    else
-        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
-    fi
-fi
+COPY_ANALYSIS=1     # Whether or not to copy output directory to an analysis directory
 EXE_SYS=CCI 	    # Execution system. Options: CCI, server
 
 #################
@@ -65,6 +46,34 @@ elif [ "$EXE_SYS" == "server" ]; then
 fi
 if [ "$VIS" == 1 ]; then
     PROCESSING_EXE_PATH=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes/scripts/modelnet-analysis/parse-sampling.py
+fi
+
+if [ ${SYNTHETIC} == 1 ];then
+    if [ "${STUDY}" == "none" ];then
+        if [ "$EXE_SYS" == "CCI" ]; then
+            ANALYSIS_DIR=${BUILD_DIR}/random-runs
+        else
+            ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/random-runs   #Only needed if COPY_ANALYSIS=1
+        fi
+    else
+        if [ "$EXE_SYS" == "CCI" ]; then
+            ANALYSIS_DIR=${BUILD_DIR}/${STUDY}
+        else
+            ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
+        fi
+    fi
+elif [ ${TRACE} == 1 ];then
+    if [ "${STUDY}" == "none" ];then
+        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/cpu-traces
+    else
+        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
+    fi
+elif [ ${BACKGROUND} == 1 ];then
+    if [ "${STUDY}" == "none" ];then
+        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/neuro-traces
+    else
+        ANALYSIS_DIR=/home/noah/Dropbox/RPI/Research/Networks/fit-fly-results/${STUDY}
+    fi
 fi
 
 ##########################
@@ -102,7 +111,7 @@ SAMPLING_POINTS=100     # Number of points in time to sample trace metrics durin
 LOAD=0.5        # Percentage of terminal link bandwidth for servers to inject traffic
 NUM_MSGS=1000     # Number of messages to send per synthetic process
 PAYLOAD_SIZE=256 # Size of messages to send between synthetic processes
-WARM_UP_TIME=10 # Time delay before stats are collected. For accurate verification results
+WARM_UP_TIME=20000 # Time delay before stats are collected. For accurate verification results
 TRAFFIC=2       # Network model dependent
                 #    1: Uniform
                 #    2: Worst-case (Slim Fly & Fit Fly only)
@@ -113,6 +122,7 @@ TRAFFIC=2       # Network model dependent
                 #    7: Scatter
                 #    8: Bisection
                 #    9: All-2-All
+                #   10: Ping
 
 # Trace Workload Params
 NUM_JOBS=1          # Number of workloads to run in parallel
@@ -144,7 +154,7 @@ CHUNK_SIZE=${PACKET_SIZE}
 MODELNET_SCHEDULER=fcfs
 ROUTER_DELAY=90
 NUM_INJECTION_QUEUES=1
-NIC_SEQ_DELAY=10
+NIC_SEQ_DELAY=0
 NODE_COPY_QUEUES=1
 NODE_EAGER_LIMIT=16000
 VC_SIZE_DEFAULT=65536
@@ -157,9 +167,7 @@ if [ "${STUDY}" == "verification" ];then
     CHUNK_SIZE=${PACKET_SIZE}
     MODELNET_SCHEDULER=fcfs
     ROUTER_DELAY=90
-    NUM_INJECTION_QUEUES=1
     NIC_SEQ_DELAY=0
-    NODE_COPY_QUEUES=1
     NODE_EAGER_LIMIT=16000
     VC_SIZE_DEFAULT=102400
     LINK_BANDWIDTH_DEFAULT=12.5
@@ -171,6 +179,8 @@ if [ "$NET_MODEL" == "ftree" ] || [ "$NET_MODEL" == "ftree2" ]
 then
     if [ "$NET_MODEL" == "ftree2" ];then
         FT_TYPE=2
+        NUM_INJECTION_QUEUES=2
+        NODE_COPY_QUEUES=4
         RAIL_SELECT=adaptive           # Options:
                                             # adaptive: routes along rail with least congestion
                                             # dedicated: routes along preselected rail
@@ -215,6 +225,8 @@ elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
 then
     if [ "$NET_MODEL" == "ffly" ];then
         SF_TYPE=1   #Options: 0->single rail slim fly, 1->dual-rail slim fly (fit fly)
+        NUM_INJECTION_QUEUES=2
+        NODE_COPY_QUEUES=4
         RAIL_SELECT=congestion           # Options:
                                             # path: routes along rail with shortest path
                                             # congestion: routes along rail with least congestion
@@ -307,9 +319,9 @@ fi
 exec_loop() {
     LOOP1=("ftree" "ftree2" "sfly" "ffly" "dfly")
     LOOP1=("ffly" "ftree2")
-    LOOP1=("sfly" "dfly" "ddfly")
+    LOOP1=("ftree")
     if [ ${SYNTHETIC} == 1 ];then
-        LOOP2=("1" "3" "4" "5" "6" "7")
+        LOOP2=("1" "3" "4" "5" "6" "7" "8" "9" "10")
         LOOP2=("1")
     elif [ ${BACKGROUND} == 1 ] && [ ${TRACE} == 0 ];then
         LOOP2=("mnist" "cifar" "hf")
@@ -346,7 +358,7 @@ exec_loop() {
             elif [ "${STUDY}" == "hybrid-jobs" ];then
                 LOOP3=("mnist" "cifar" "hf")
             elif [ "${STUDY}" == "offered-load-scaling" ];then
-                LOOP3=($(seq 0.05 0.05 2.0))
+                LOOP3=($(seq 0.1 0.1 0.2))
             elif [ "${STUDY}" == "verification" ];then
                 LOOP3=($(seq 0.2 0.2 2.0))
             elif [ "${STUDY}" == "routing-comparison" ];then
@@ -407,9 +419,10 @@ exec_loop() {
                     LINK_BANDWIDTH_INSTANCE=${L3}
                 elif [ "${STUDY}" == "offered-load-scaling" ];then
                     LOAD=${L3}
+                    NUM_MSGS=100000
                 elif [ "${STUDY}" == "verification" ];then
-                    TRAFFIC=1
-                    NUM_MSGS=10000
+                    #TRAFFIC=1
+                    NUM_MSGS=100000
                     LOAD=${L3}
                 elif [ "${STUDY}" == "routing-comparison" ];then
                     ROUTING_ALG=${L3}
@@ -448,7 +461,7 @@ exec_loop() {
                 get_trace_params    # Makes call to "get_trace_params" function at bottom of this file
                 if [ ${SYNTHETIC} == 1 ];then
                     SIM_END_TIME=1500000000
-                    SIM_END_TIME=10000
+                    SIM_END_TIME=100000
                 fi
                 if [ ${BACKGROUND} == 1 ];then
                     SIM_END_TIME=20000000
@@ -718,6 +731,7 @@ exec_loop() {
                         then
                             SBATCH_SCRIPT=${TEMP_LP_IO_DIR}/sbatch-script.sh
                             echo "#!/bin/bash" > ${SBATCH_SCRIPT}
+                            echo "set -e" >> ${SBATCH_SCRIPT}
                             echo -n "srun -t ${TIME_ALLOC} -N ${NUM_NODES} -n ${NUM_PROCESSES}  -o ${TEMP_LP_IO_DIR}/srun-log ${EXE_PATH} --synch=${SYNCH}" >> ${SBATCH_SCRIPT}
                             echo -n " --batch=${BATCH} --gvt-interval=${GVT} --max-opt-lookahead=${MAX_OPT_LOOKAHEAD}" >> ${SBATCH_SCRIPT}
                             echo -n " --workload_type=${WRKLD_TYPE} --workload_conf_file=${WRKLD_CONF_FILE}" >> ${SBATCH_SCRIPT}
@@ -1158,7 +1172,7 @@ create_alloc_conf() {
             elif [ "$NET_MODEL" == "sfly" ] || [ "$NET_MODEL" == "ffly" ]
             then
                 echo $(( ${MODELNET_SLIMFLY} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
-            elif [ "$NET_MODEL" == "dfly" ]
+            elif [ "$NET_MODEL" == "dfly" ] || [ "$NET_MODEL" == "ddfly" ]
             then
                 echo $(( ${MODELNET_DRAGONFLY_CUSTOM} * ${REPS} )) >> ${ALLOC_CONFIG_PATH}
             fi

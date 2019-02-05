@@ -19,12 +19,12 @@ LIGHTBLUE='\033[1;34m'
 
 ######## Section 1 ########
 #Build Process Selection Flags
-CLEAN=1         # Purges all build directories
-PREPARE=1       # Executes CODES prepare.sh script
+CLEAN=0         # Purges all build directories
+PREPARE=0       # Executes CODES prepare.sh script
 MPI_MODULE=0    # If running on CCI, need to load module for MPI. Fill in module below
-ROSS=1          # Builds and installs ROSS
-DUMPI=1         # Builds and installs DUMPI. See "DUMPI_ARGS" for passing in args for dumpi vs undumpi
-CODES=1         # Builds and installs CODES
+ROSS=0          # Builds and installs ROSS
+DUMPI=0         # Builds and installs DUMPI. See "DUMPI_ARGS" for passing in args for dumpi vs undumpi
+CODES=0         # Builds and installs CODES
 CODES_TESTS=1   # Builds and runs the CODES tests
 
 #System
@@ -38,14 +38,14 @@ MODULES=("mpi/openmpi-1.6-gcc44")
 BUILD_PROCS=1
 
 #Important Directory Paths
-CODES_DIR=/home/noah/Dropbox/RPI/Research/Networks/codes-unified/codes
-CODES_BUILD_DIR=/scratch/codes-nemo/build/build-codes
+CODES_DIR=/home/noah/Documents/testing-jenkins-build/codes
+CODES_BUILD_DIR=/home/noah/Documents/testing-jenkins-build/build/build-codes
 CODES_INSTALL_DIR=${CODES_BUILD_DIR}/install
-DUMPI_DIR=/home/noah/Dropbox/RPI/Research/Networks/sst-dumpi/
-DUMPI_BUILD_DIR=/scratch/codes-nemo/build/build-dumpi
+DUMPI_DIR=/home/noah/Documents/testing-jenkins-build/sst-dumpi
+DUMPI_BUILD_DIR=/home/noah/Documents/testing-jenkins-build/build/build-dumpi
 DUMPI_INSTALL_DIR=${DUMPI_BUILD_DIR}/install
-ROSS_DIR=/home/noah/Dropbox/RPI/Research/Networks/ROSS
-ROSS_BUILD_DIR=/scratch/codes-nemo/build/build-ross
+ROSS_DIR=/home/noah/Documents/testing-jenkins-build/ROSS
+ROSS_BUILD_DIR=/home/noah/Documents/testing-jenkins-build/build/build-ross
 ROSS_INSTALL_DIR=${ROSS_BUILD_DIR}/install
 
 #Dumpi Build Arguments

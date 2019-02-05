@@ -9,6 +9,7 @@ import math
 import collections
 import numpy as np
 import argparse
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -17,8 +18,8 @@ import pdb
 
 # Parse commandline arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--lp-io-dir', action='store', dest='lpIoDir', nargs='+', type=str,
-                    help='space separated list of paths to the directories containing all modelnet sim data for each execution')
+parser.add_argument('--test-dir', action='store', dest='testDir', type=str,
+                    help='path to the directory containing lp IO output directories for all runs to be compared')
 parser.add_argument('--sim-labels', action='store', default=0, dest='simLabels', nargs='+', type=str,
                     help='space separated list of labels for each simulation')
 parser.add_argument('--num-bins', action='store', default=-1, dest='nbins',
@@ -53,9 +54,11 @@ parser.add_argument('--fig-width', action='store', default=5, dest='figWidth', t
                     help='Width of the generated figure')
 parser.add_argument('--fig-font-size', action='store', default=8, dest='fontSize', type=float,
                     help='size of text in the generated figure')
+parser.add_argument('--collection-level', action='store', dest='collectionLevel', nargs='+', type=str, default="links",
+                    help='String indicating the desired path to put generated figures')
 
 results = parser.parse_args()
-print 'lp io dir          =', results.lpIoDir
+print 'testDir          =', results.testDir
 print 'sim labels         =', results.simLabels
 print 'numbins            =', results.nbins
 print 'data file          =', results.dataFile
@@ -73,7 +76,10 @@ print 'output dir         =', results.outputDir
 print 'fig height         =', results.figHeight
 print 'fig width          =', results.figWidth
 print 'font size          =', results.fontSize
-lpIoDir = results.lpIoDir
+print 'collection level   =', results.collectionLevel
+rootdir = Path(results.testDir)
+lpIoDir = [ str(f) for f in rootdir.glob('**/*') if f.is_dir() ]
+lpIoDir.sort()
 simLabels = results.simLabels
 nBins = int(results.nbins)
 dataFile = int(results.dataFile)
@@ -91,18 +97,22 @@ outputDir = results.outputDir
 figHeight = results.figHeight
 figWidth = results.figWidth
 fontSize = results.fontSize
+collectionLevel = results.collectionLevel[0]
 
 matplotlib.rcParams.update({'font.size': fontSize})
 
 #Width of the lines for plotting
 lwidth = 2.0
-markerSize = 3.0
-markerFrequency = 0.1
+markerSize = 5.0
+markerStep = 50
 
 lineColor = ['red','limegreen','blue','darkred','darkgreen','darkblue','salmon','lightgreen','lightskyblue']
-lineColor = ['salmon','red','darkred','lightgreen','limegreen','darkgreen','lightskyblue','blue','darkblue']
-markers = ['X','x','P','+','o','s','*','p','v']
-lineStyle = ['-','-','--','-','-','--','-','-','--']
+lineColor = ['royalblue','salmon','gold','green','gold','royalblue','violet','darkviolet','black']
+lineColor = ['royalblue','salmon','green','green','gold','violet','darkviolet','black']
+#lineColor = ['royalblue','salmon','gold','green','royalblue','salmon','gold','green']
+markers = ['x','+','v','o','s','p','v','d','8','1']
+lineStyle = ['-','-','--','-','--','-','-','--','-','-']
+lineStyle = ['-','-','-','-','-','-','--','--']
 
 maxValue = 0
 
@@ -120,11 +130,15 @@ for met in metric:
             hwName = 'switch'
             portMod = 4
         elif modelType[sim] == 1:
-            mType = 'dragonfly'
+            mType = 'dragonfly'  # dragonfly-1d
             hwName = 'router'
             portMod = 3
         elif modelType[sim] == 2:
             mType = 'slimfly'
+            hwName = 'router'
+            portMod = 3
+        elif modelType[sim] == 3:
+            mType = 'dragonfly-2d'
             hwName = 'router'
             portMod = 3
 
@@ -156,8 +170,8 @@ for met in metric:
         #inFile.close()
 
         # Extract model-msg-stats file header
-        if mType == "dragonfly":
-            inFile = open(lpIoDir[sim]+'/'+mType+'-msg-stats.meta', 'r')
+        if "dragonfly" in mType:
+            inFile = open(lpIoDir[sim]+'/'+'dragonfly'+'-msg-stats.meta', 'r')
         else:
             inFile = open(lpIoDir[sim]+'/'+mType+'-msg-stats', 'r')
         line = inFile.readline()
@@ -165,17 +179,18 @@ for met in metric:
         temp = line.replace('# Format','')
         temp = temp.replace(' <','')
         temp = temp.replace('>',',')
-        temp = temp.replace('Total Data Size','Data Per Terminal [bytes]')
-        temp = temp.replace('Total Packet Latency','Aggregate Packet Latency [ns]')
+        temp = temp.replace('Total Data Size','Data Per Terminal [KB]')
+        #temp = temp.replace('Total Packet Latency','Average Packet Latency [ns]')
+        temp = temp.replace('Total Packet Latency','Total Packet Latency [us]')
         temp = temp.replace('# Flits/','')
         temp = temp.replace('hops','Hops')
-        temp = temp.replace('Busy Time','Terminal Busy Time [us]')
+        temp = temp.replace('Busy Time','Terminal Busy Time [ns]')
         temp = temp.replace('End Time','End Time [ms]')
         temp = temp.replace('Packets Generated', 'Packets Generated [1e3]')
         temp = temp.replace('Packets finished', 'Packets Finished [1e3]')
         msgHeader = temp.split(",")
         del msgHeader[-1]
-        if mType == "dragonfly":
+        if "dragonfly" in mType:
             inFile.close()
             inFile = open(lpIoDir[sim]+'/dragonfly-msg-stats', 'r')
 
@@ -194,38 +209,44 @@ for met in metric:
                 msgDataTemp.append(temp)
         inFile.close()
 
-        # Extract mpi-replay-stats file header
-        inFile = open(lpIoDir[sim]+'/mpi-replay-stats', 'r')
-        line = inFile.readline()
-        line = line.strip()
-        temp = line.replace('# Format','')
-        temp = temp.replace(' <','')
-        temp = temp.replace('>',',')
-        temp = temp.replace('Total sends', 'Total Sends')
-        temp = temp.replace('Bytes sent', 'Bytes Sent')
-        msgHeaderReplay = temp.split(",")
-        del msgHeaderReplay[-1]
-        if mType == "dragonfly":
-            inFile.close()
-            inFile = open(lpIoDir[sim]+'/dragonfly-msg-stats', 'r')
-
-        # Parse mpi-replay-stats data
-        print 'Parsing '+hwName+'-msg-stats data...'
-        replayDataTemp = []
-        while True:
+        if dataFile == 3:
+            # Extract mpi-replay-stats file header
+            inFile = open(lpIoDir[sim]+'/mpi-replay-stats', 'r')
             line = inFile.readline()
-            if not line: break
             line = line.strip()
-            temp = line.split(" ")
-            #temp = [float(i) for i in temp]
-            if temp[met] == '-nan' or temp[met] == 'nan':
-                takingUpSpace = 1
-            else:
-                replayDataTemp.append(temp)
-        inFile.close()
+            temp = line.replace('# Format','')
+            temp = temp.replace(' <','')
+            temp = temp.replace('>',',')
+            temp = temp.replace('Total sends', 'Total Sends')
+            temp = temp.replace('Bytes sent', 'Bytes Sent')
+            msgHeaderReplay = temp.split(",")
+            del msgHeaderReplay[-1]
+            if "dragonfly" in mType:
+                inFile.close()
+                inFile = open(lpIoDir[sim]+'/dragonfly-msg-stats', 'r')
+
+        # I think this section should be dataFile=3 for mpi-replay-stats and not msg-stats
+        if dataFile == 3:
+            # Parse model-msg-stats data
+            print 'Parsing '+hwName+'-msg-stats data...'
+            replayDataTemp = []
+            while True:
+                line = inFile.readline()
+                if not line: break
+                line = line.strip()
+                temp = line.split(" ")
+                #temp = [float(i) for i in temp]
+                if temp[met] == '-nan' or temp[met] == 'nan':
+                    takingUpSpace = 1
+                else:
+                    replayDataTemp.append(temp)
+            inFile.close()
 
         # Extract model-switch-stats file header
-        inFile = open(lpIoDir[sim]+'/'+mType+'-'+hwName+'-stats', 'r')
+        if 'dragonfly' in mType:
+            inFile = open(lpIoDir[sim]+'/'+'dragonfly'+'-'+hwName+'-stats', 'r')
+        else:
+            inFile = open(lpIoDir[sim]+'/'+mType+'-'+hwName+'-stats', 'r')
         line = inFile.readline()
         line = line.strip()
         temp = line.replace('# Format','')
@@ -248,7 +269,10 @@ for met in metric:
         inFile.close()
 
         # Extract fattree-switch-traffic file header
-        inFile = open(lpIoDir[sim]+'/'+mType+'-'+hwName+'-traffic', 'r')
+        if 'dragonfly' in mType:
+            inFile = open(lpIoDir[sim]+'/'+'dragonfly'+'-'+hwName+'-traffic', 'r')
+        else:
+            inFile = open(lpIoDir[sim]+'/'+mType+'-'+hwName+'-traffic', 'r')
         line = inFile.readline()
         line = line.strip()
         temp = line.replace('# Format','')
@@ -270,6 +294,11 @@ for met in metric:
         inFile.close()
 
         visData = []
+        linkIds = []
+        routerIds = []
+        railIds = []
+        level = []
+        linkCount = 0
         if dataFile == 0:
             visDataTemp = msgDataTemp
         elif dataFile == 1:
@@ -280,17 +309,19 @@ for met in metric:
             visDataTemp = replayDataTemp
         for i in range(len(visDataTemp)):
             if dataFile == 0:
-                if float(visDataTemp[i][met] > 0):
+                if float(visDataTemp[i][met]) > 0:
                     if met == 6:
-                        if mType == "dragonfly":
-                            visData.append(float(visDataTemp[i][met]))
-                        else:
                             visData.append(float(visDataTemp[i][met])+1)
                     elif met == 7:
-                        visData.append(float(visDataTemp[i][met])/1000)
+                        visData.append(float(visDataTemp[i][met]))
+                    elif met == 2:
+                        visData.append(float(visDataTemp[i][met])/1024)
                     elif met == 3:
                         if float(visDataTemp[i][4]) > 0:
-                            visData.append(float(visDataTemp[i][met])/float(visDataTemp[i][4]))
+                            #visData.append(float(visDataTemp[i][met])/float(visDataTemp[i][4]))
+                            visData.append(float(visDataTemp[i][met])/ 1000)
+                        else:
+                            visData.append(0.0)
                     elif met == 4:
                         visData.append(float(visDataTemp[i][met])/1000)
                     elif met == 5:
@@ -300,18 +331,122 @@ for met in metric:
                     #        visData.append(float(visDataTemp[i][met]) / float(visDataTemp[i][met+1]))
                     else:
                         visData.append(float(visDataTemp[i][met]))
-            elif dataFile == 2:
+            elif dataFile == 22:
+                railIdIndex = 0
+                statStart = 3
+                levelIndex = 0
+                if mType == 'fattree':
+                    routerIdIndex = 3
+                    railIdIndex = 1
+                    statStart = 4
+                    levelIndex = 2
+                elif mType == 'slimfly':
+                    routerIdIndex = 2
+                elif 'dragonfly' in mType:
+                    routerIdIndex = 1
                 for j in range(len(visDataTemp[i])-portMod):
-                    if float(float(visDataTemp[i][met+j])/1024) > 0.0:
-                        visData.append(float(visDataTemp[i][met+j])/1024.0)
+                    #if float(float(visDataTemp[i][statStart+j])/1024.0) >= 0.0:
+                    if float(float(visDataTemp[i][statStart+j])) > 0.0:
+                        visData.append(float(visDataTemp[i][statStart+j])/1024.0)
+                        routerIds.append(int(visDataTemp[i][routerIdIndex]))
+                        railIds.append(int(visDataTemp[i][railIdIndex]))
+                        level.append(int(visDataTemp[i][levelIndex]))
+                        linkIds.append(linkCount)
+                        linkCount+=1
             elif dataFile == 3:
                     visData.append(float(visDataTemp[i][met]))
+            elif dataFile == 1 or dataFile == 2:
+                if mType == 'dragonfly':
+                    headerLines = 1
+                    statStart = 3
+                    numLocalLinks = 16
+                    numGlobalLinks = 12
+                    numTerminalLinks = 8
+                if mType == 'dragonfly-2d':
+                    headerLines = 1
+                    statStart = 3
+                    numLocalLinks = 30
+                    numGlobalLinks = 8
+                    numTerminalLinks = 4
+                if mType == 'slimfly':
+                    headerLines = 1
+                    statStart = 3
+                    numLocalLinks = 6
+                    numGlobalLinks = 13
+                    numTerminalLinks = 9
+                if mType == 'fattree':
+                    headerLines = 1
+                    routerIdIndex = 3
+                    railIdIndex = 1
+                    statStart = 4
+                    levelIndex = 2
+                    if (i-1) % 3 == 0:
+                        terminalLinkIds = range(0,18)
+                        localLinkIds = range(18,36)
+                        globalLinkIds = []
+                    if (i-1) % 3 == 1:
+                        terminalLinkIds = []
+                        localLinkIds = range(0,18)
+                        globalLinkIds = range(18,36)
+                    if (i-1) % 3 == 2:
+                        terminalLinkIds = []
+                        localLinkIds = []
+                        globalLinkIds = range(0,36)
+                    #for j in range(len(visDataTemp[i])-portMod):
+                    #    #if float(float(visDataTemp[i][statStart+j])/1024.0) >= 0.0:
+                    #    if float(float(visDataTemp[i][statStart+j])) > 0.0:
+                    #        visData.append(float(visDataTemp[i][statStart+j]))
+                    #        routerIds.append(int(visDataTemp[i][routerIdIndex]))
+                    #        railIds.append(int(visDataTemp[i][railIdIndex]))
+                    #        level.append(int(visDataTemp[i][levelIndex]))
+                    #        linkIds.append(linkCount)
+                    #        linkCount+=1
+                else:
+                    localLinkIds = range(statStart,numLocalLinks)
+                    globalLinkIds = range(numLocalLinks,numLocalLinks+numGlobalLinks)
+                    terminalLinkIds = range(numLocalLinks+numGlobalLinks,numLocalLinks+numGlobalLinks+numTerminalLinks)
+                if i > headerLines-1:
+                    #for j in localLinkIds:
+                        #visData.append(float(visDataTemp[i][j]))
+                    for j in globalLinkIds:
+                        visData.append(float(visDataTemp[i][j])/1024)
+                    #for j in terminalLinkIds:
+                        #visData.append(float(visDataTemp[i][j]))
             else:
-                for j in range(len(visDataTemp[i])-portMod):
-                    visData.append(float(visDataTemp[i][met+j])/1000)
+                print "Not a valid file number"
+                exit()
 
-        mean = sum(visData) / len(visData)
+        if len(visData) == 0:
+            mean = 0
+        else:
+            mean = sum(visData) / len(visData)
+            print mType+' max = '+str(max(visData))
+            print mType+' mean = '+str(sum(visData)/len(visData))
 
+        # Rearrange fat-tree data to put second rail switches at end
+        doIt = 0
+        if mType == 'fattree' and doIt:
+            if dataFile == 2:
+                switchData = [0 for i in range(linkCount/36)]
+                linkData = [0 for i in range(linkCount)]
+                visDataCopy = visData
+                numRails = railIds[3*36] + 1
+                numLevels = 3
+                indx = 0
+                numRoutersPerRail = max(routerIds) + 1
+                #for k in range(0,numRails):
+                #    for j in range(0,numLevels):
+                #        for i in range(0,len(visDataCopy)):
+                #            if railIds[i] == k:
+                #                if level[i] == j:
+                #                    visData[indx] = visDataCopy[i]
+                #                    indx += 1
+                #                    switchData[(railIds[i]*numRoutersPerRail)+routerIds[i]] += visDataCopy[i]
+                for i in range(len(visData)):
+                    switchData[(railIds[i]*numRoutersPerRail)+routerIds[i]] += visData[i]
+                    linkData[railIds[i]*(linkCount/2) + routerIds[i]*36 + linkIds[i] % 36] = visData[i]
+                #visData = switchData
+                visData = linkData
 
         if plotType == 'bar':
             # plot the bar chart
@@ -321,7 +456,10 @@ for met in metric:
         elif 'line' in plotType:
             if plotType == 'line-sorted':
                 visData.sort()
-                markers=['None' for i in range(len(lineColor))]
+                #visData = sorted(visData[0:len(localLinkIds)]) + sorted(visData[len(localLinkIds):len(localLinkIds)+len(globalLinkIds)]) + sorted(visData[len(localLinkIds)+len(globalLinkIds):])
+                markerFrequency = range(0,len(visData,),markerStep)
+                markerFrequency.append(len(visData) -1)
+                #markers=['None' for i in range(len(lineColor))]
                 #lineStyle=['-' for i in range(len(lineColor))]
             else:
                 markers=['None' for i in range(len(lineColor))]
@@ -341,9 +479,9 @@ for met in metric:
             else:
                 n, bins, patches = ax.hist(visData, nBins, normed=1, histtype='step', cumulative=True,
                     label=simLabels[sim].replace('_','.').replace('-',' '), linewidth=lwidth, color=lineColor[sim])
-
-        if max(visData) > maxValue:
-            maxValue = max(visData)
+        if len(visData) != 0:
+            if max(visData) > maxValue:
+                maxValue = max(visData)
 
 
         if annotateFigure == 1:
@@ -443,16 +581,24 @@ for met in metric:
                     xytext=(bins[np.searchsorted(bins,mean)] + avgMarkerOffsetX + avgMarkerTextOffsetX, n[np.searchsorted(bins,mean)] + avgMarkerOffsetY + avgMarkerTextOffsetY))
 
     if plotType == 'heatmap':
-        temp = np.zeros([len(heatmapData),len(max(heatmapData,key = lambda x: len(x)))])
-        for i,j in enumerate(heatmapData):
-            temp[i][0:len(j)]=j
-        heatmapData = temp.tolist()
+        if collectionLevel == 'router':
+            temp = [0.0 for i in range(max(routerIds)+1)]
+            for i in range(len(heatmapData[0])):
+                temp[routerIds[i]] += heatmapData[0][i]
+            heatmapData[0] = temp
+        else:
+            temp = np.full([len(heatmapData),len(max(heatmapData,key = lambda x: len(x)))],-1)
+            for i,j in enumerate(heatmapData):
+                temp[i][0:len(j)]=j
+            heatmapData = temp.tolist()
         print len(heatmapData[0])
-        if met == 6:
-            imgplot = ax.imshow(heatmapData, cmap='jet', interpolation='nearest', aspect='auto')
+        heatmapData = np.array(heatmapData)
+        heatmapData[heatmapData < 0] = np.nan
+        if met == 6 or logScale == False:
+            imgplot = ax.imshow(heatmapData, cmap='plasma', interpolation='nearest', aspect='auto')
         else:
             norm = colors.SymLogNorm(linthresh=0.001,linscale=0.01,vmin=min(min(heatmapData)), vmax=max(max(heatmapData)), clip='True')
-            imgplot = ax.imshow(heatmapData, cmap='jet', interpolation='nearest', norm=norm, aspect='auto')
+            imgplot = ax.imshow(heatmapData, cmap='viridis', interpolation='nearest', norm=norm, aspect='auto')
         cbar = fig.colorbar(imgplot, orientation='vertical')
 
     if axisLimits == 1:
@@ -471,15 +617,15 @@ for met in metric:
                     ax.set_xlim([250,264])
                 else:
                     ax.set_xlim([4.5,5.8])
-            elif met == 6:
-                if plotType != 'heatmap':
-                    ax.set_xlim([3,10])
+            #elif met == 6:
+                #if plotType != 'heatmap':
+                #    ax.set_xlim([3,10])
             elif met == 3:
                 if plotType == 'cdf':
-                    ax.set_xlim([160,300000])
+                    #ax.set_xlim([160,300000])
                     ax.set_ylim([0.0,1.01])
-                elif 'line' in plotType:
-                    ax.set_ylim([200.0,maxValue*1.5])
+                #elif 'line' in plotType:
+                #    ax.set_ylim([200.0,maxValue*1.5])
                 elif plotType == 'heatmap':
                     nothing = 0
                     #ax.set_ylim([200.0,maxValue])
@@ -517,9 +663,12 @@ for met in metric:
         ax.legend(loc='upper left', ncol=3, borderaxespad=0.1)
     elif met == 3 and dataFile == 0:
         if plotType == 'line-sorted':
-            ax.legend(loc='upper left', ncol=3, borderaxespad=0.1)
+            ax.legend(loc='upper right', ncol=2, borderaxespad=0.1, bbox_to_anchor=(0.98,0.42))
+            ax.legend(loc='upper left', ncol=2, borderaxespad=0.1, bbox_to_anchor=(0.00,0.99))
     else:
-        ax.legend(loc='upper center', ncol=3, borderaxespad=0.1)
+        ax.legend(loc='upper right', ncol=1, borderaxespad=0.1, bbox_to_anchor=(0.98,0.62))
+        ax.legend(loc='upper right', ncol=1, borderaxespad=0.1)
+        nothing = 1
 
     #ax.set_title('Cumulative step histograms')
     if dataFile == 0:
@@ -531,6 +680,10 @@ for met in metric:
     elif dataFile == 3:
         xlabel = msgHeaderReplay[met]
     ax.set_xlabel(xlabel)
+
+    #ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+    #ax.set_ylim([2.0,10.0])
+    #ax.set_ylim([0.0,4000.0])
 
     if plotType == 'bar':
         ax.set_ylabel(xlabel)
@@ -555,6 +708,7 @@ for met in metric:
     else:
         ax.set_ylabel('Cumulative Distribution')
 
+    #ax.margins(y=.001,tight=False)
     plt.tight_layout(pad = 0.0)
 
     if pltSave == True:
